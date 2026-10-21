@@ -62,7 +62,31 @@ export type TravelRule = {
   updatedAt: string;
   updatedBy: string;
   note?: string;
+  /** Proof that the fare and minutes were checked in THIS direction. Required for automatic pricing. */
+  evidence?: TravelEvidence;
+  /** When the public transport for this leg runs. Unknown → automatic pricing is refused. */
+  availability?: TransportAvailability;
 };
+
+export type TravelEvidence = {
+  /** Operator page, fare-board photo, receipt or app screenshot reference. */
+  source: string;
+  /** ISO date-time the fare and times were checked. */
+  verifiedAt: string;
+  verifiedBy: string;
+};
+
+/**
+ * Transport availability for a travel leg. Times are local "HH:MM" (Tbilisi).
+ * `travelMinutes` on the rule is the door-to-door time EXCLUDING waiting for a
+ * departure; `accessMinutes` is the part before boarding (e.g. taxi to station).
+ */
+export type TransportAvailability =
+  | { kind: "unknown" }
+  /** Frequent service (e.g. minibus every 10–15 min) between first and last departure. */
+  | { kind: "frequent"; firstDeparture: string; lastDeparture: string; accessMinutes: number }
+  /** Fixed departures, valid only for an explicit, verified date range. */
+  | { kind: "timetable"; departures: readonly string[]; accessMinutes: number; validFrom: string; validTo: string };
 
 /** Per-quote admin decision replacing a rule (e.g. an unusual village). Always audited. */
 export type TravelOverride = {

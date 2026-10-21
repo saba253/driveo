@@ -84,3 +84,25 @@ service yet. **Every item below blocks production use of automatic prices.**
 - No route handler or UI uses the quote service yet. Publishing prices
   (`PUBLISH_PRICES` in `src/server/quotes.ts`) stays `false` until all blockers
   above are cleared and the founder approves.
+
+## 10. Automatic-pricing eligibility gate (Step 1.6D)
+
+`src/lib/pricing/eligibility.ts` decides whether a request MAY receive an
+automatic price; `src/lib/quotes/service.ts` returns a quote only when it is
+eligible. The shipped policy (`DEFAULT_AUTOMATIC_PRICING_POLICY`,
+`src/lib/pricing/pilot.ts`) has the master switch and every pilot route
+(Tbilisi local, Tbilisi → Rustavi, Rustavi → Tbilisi) **disabled and
+unapproved**, so every request goes to manual assessment.
+
+Before any route can be priced automatically, all of these need an approval
+record (who and when): the master switch, the pilot route, the tariff version,
+the configuration version, an operating policy (day/driving/break/handover
+limits) and the evidence-age rule. Every travel rule used must carry evidence
+(source, date, verifier) for its own direction and transport availability
+(frequent service with first/last departure, or a timetable valid for the
+travel date). Unknown departures, stale evidence, overrides, extras, overnight
+or over-limit days all fail safe to manual assessment.
+
+The 13-hour day and 20 % margin from the research are recorded only as
+proposals (`PROPOSED_OPERATING_POLICY`, `MODERATE_RESEARCH_SCENARIO`) and are
+rejected by the gate.

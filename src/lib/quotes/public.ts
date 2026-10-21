@@ -1,3 +1,5 @@
+import { ka } from "../../content/ka.ts";
+import type { EligibilityReasonCode } from "../pricing/eligibility.ts";
 import type { ManualReasonCode } from "../pricing/engine-types.ts";
 import type { InputIssue } from "./input.ts";
 import type { QuoteServiceResult } from "./service.ts";
@@ -23,10 +25,12 @@ export type PublicQuoteResponse =
       excludes: readonly ["fuel", "charging"];
       /** True when this re-quote's total differs from the previous one; the customer must acknowledge it. */
       priceChanged: boolean;
+      /** Georgian status text; never claims the price is automatic or the booking accepted. */
+      message: string;
     }
   /** A price was computed but may not be shown (publishing off, or test data). */
-  | { status: "price_pending"; quoteId: string; validUntil: string; priceChanged: boolean }
-  | { status: "manual_pricing"; categories: ManualCategory[] }
+  | { status: "price_pending"; quoteId: string; validUntil: string; priceChanged: boolean; message: string }
+  | { status: "manual_pricing"; categories: ManualCategory[]; message: string }
   | { status: "invalid_input"; issues: InputIssue[] }
   | { status: "rate_limited"; retryAfterSeconds: number };
 
@@ -55,6 +59,21 @@ const CATEGORY: Record<ManualReasonCode, ManualCategory> = {
   overnightPolicyNotConfigured: "service",
 };
 
+const ELIGIBILITY_CATEGORY: Partial<Record<EligibilityReasonCode, ManualCategory>> = {
+  unknownLocality: "location",
+  routeUnavailable: "route",
+  routeImplausible: "route",
+  positioningDepartureUnknown: "route",
+  positioningDepartureUnavailable: "route",
+  returnDepartureUnknown: "route",
+  returnDepartureUnavailable: "route",
+  dayExceedsLimit: "route",
+  drivingExceedsLimit: "route",
+  overnightRequired: "route",
+  driveStartTooLate: "route",
+  vehicleNotEligible: "vehicle",
+};
+
 export function toPublicQuoteResponse(result: QuoteServiceResult, opts: { publishPrices: boolean }): PublicQuoteResponse {
   switch (result.status) {
     case "rate_limited":
@@ -62,14 +81,20 @@ export function toPublicQuoteResponse(result: QuoteServiceResult, opts: { publis
     case "invalid_input":
       return { status: "invalid_input", issues: result.issues.map((i) => ({ field: i.field, code: i.code })) };
     case "manual_pricing": {
-      const categories = [...new Set(result.reasons.map((r) => CATEGORY[r.code] ?? "service"))];
-      return { status: "manual_pricing", categories };
+      const categories = [
+        ...new Set([
+          ...result.reasons.map((r) => CATEGORY[r.code] ?? "service"),
+          ...result.eligibility.reasons.map((r) => ELIGIBILITY_CATEGORY[r.code] ?? "service"),
+        ]),
+      ];
+      return { status: "manual_pricing", categories, message: ka.requestStatus.manual_assessment };
     }
     case "quoted": {
       const q = result.quote;
       const publishable = opts.publishPrices && q.authoritative && !q.commercial.testData;
       const priceChanged = Boolean(q.priceChange?.changed);
-      if (!publishable) return { status: "price_pending", quoteId: q.quoteId, validUntil: q.validUntil, priceChanged };
+      const message = ka.requestStatus[result.eligibility.customerStatus];
+      if (!publishable) return { status: "price_pending", quoteId: q.quoteId, validUntil: q.validUntil, priceChanged, message };
       return {
         status: "price_available",
         quoteId: q.quoteId,
@@ -77,6 +102,7 @@ export function toPublicQuoteResponse(result: QuoteServiceResult, opts: { publis
         total: { amountMinor: q.commercial.total.amountMinor, currency: "GEL" },
         excludes: ["fuel", "charging"],
         priceChanged,
+        message,
       };
     }
   }

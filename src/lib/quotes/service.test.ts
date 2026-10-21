@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { PricingEngineConfig, ServiceTariff } from "../pricing/engine-types.ts";
-import { FIXTURE_TARIFF, FIXTURE_TBILISI_CONFIG } from "../pricing/test-fixtures.ts";
+import type { AutomaticPricingPolicy } from "../pricing/eligibility.ts";
+import { DEFAULT_AUTOMATIC_PRICING_POLICY } from "../pricing/pilot.ts";
+import { FIXTURE_ELIGIBLE_POLICY, FIXTURE_TARIFF, FIXTURE_TBILISI_CONFIG } from "../pricing/test-fixtures.ts";
 import { createMockRouteProvider, type MockRoute } from "../routing/mock-provider.ts";
 import type { RouteProvider } from "../routing/types.ts";
 import { createRateLimiter } from "../routing/usage.ts";
@@ -43,7 +45,7 @@ const input = (from: Place, to: Place, over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
-function harness(opts: { setup?: Partial<PricingSetup>; limit?: number; allowTestCoordinates?: boolean } = {}) {
+function harness(opts: { setup?: Partial<PricingSetup>; limit?: number; allowTestCoordinates?: boolean; policy?: Partial<AutomaticPricingPolicy> } = {}) {
   let clock = T0;
   let ids = 0;
   let routeCalls = 0;
@@ -51,7 +53,10 @@ function harness(opts: { setup?: Partial<PricingSetup>; limit?: number; allowTes
   const mock = createMockRouteProvider({ routes: MOCK_ROUTES, now: () => clock });
   const provider: RouteProvider = { id: mock.id, computeRoute: (r) => (routeCalls++, mock.computeRoute(r)) };
   const store = createInMemoryQuoteStore();
+  // Mutable copy so a test can record a newly approved tariff version.
+  const policy: AutomaticPricingPolicy = { ...FIXTURE_ELIGIBLE_POLICY, ...opts.policy };
   const service = createQuoteService({
+    automaticPricingPolicy: policy,
     routeProvider: provider,
     loadPricingSetup: async () => setup,
     store,
@@ -65,6 +70,7 @@ function harness(opts: { setup?: Partial<PricingSetup>; limit?: number; allowTes
     service,
     store,
     setup,
+    policy,
     routeCalls: () => routeCalls,
     advance: (ms: number) => (clock = new Date(clock.getTime() + ms)),
     request: (raw: unknown) => service.requestQuote(raw, { clientKey: "client-1" }),
@@ -143,6 +149,41 @@ describe("quote orchestration — mocked routing and pricing", () => {
     const q = quoted(await h.request(input(PLACES.beta, PLACES.gamma)));
     assert.equal(q.commercial.driverId, "driver-beta");
     assert.equal(q.commercial.zones.base, "beta");
+  });
+});
+
+describe("quote orchestration — automatic-pricing gate", () => {
+  it("the shipped default policy sends everything to manual assessment without calling the routing provider", async () => {
+    const h = harness({ policy: DEFAULT_AUTOMATIC_PRICING_POLICY });
+    const r = await h.request(input(PLACES.tbilisi, PLACES.beta));
+    assert.equal(r.status, "manual_pricing");
+    if (r.status !== "manual_pricing") return;
+    assert.ok(r.eligibility.reasons.some((x) => x.code === "automaticPricingDisabled"));
+    assert.ok(!r.eligibility.reasons.some((x) => x.code === "routeUnavailable"), "route not computed, so not blamed");
+    assert.equal(h.routeCalls(), 0);
+    const pub = toPublicQuoteResponse(r, { publishPrices: true });
+    assert.equal(pub.status, "manual_pricing");
+    assert.equal(pub.status === "manual_pricing" && pub.message, "ეს მოთხოვნა ინდივიდუალურად შეფასდება. ფასსა და ხელმისაწვდომობას დაგიდასტურებთ.");
+  });
+
+  it("a computable price that fails the gate is never stored or returned", async () => {
+    const h = harness({ policy: { pilotRoutes: [] } });
+    const r = await h.request(input(PLACES.tbilisi, PLACES.beta));
+    assert.equal(r.status, "manual_pricing");
+    if (r.status !== "manual_pricing") return;
+    assert.deepEqual(r.reasons, []);
+    assert.deepEqual(r.eligibility.reasons.map((x) => x.code), ["routeNotInPilot"]);
+    assert.equal(h.routeCalls(), 1);
+    assert.equal(await h.store.get("id-2"), null, "no quote stored");
+    assert.ok(!JSON.stringify(toPublicQuoteResponse(r, { publishPrices: true })).includes("amountMinor"));
+  });
+
+  it("eligible requests are shown as 'under review' — never as an accepted or automatic price", async () => {
+    const r = await harness().request(input(PLACES.tbilisi, PLACES.beta));
+    assert.equal(r.status, "quoted");
+    const pub = toPublicQuoteResponse(r, { publishPrices: false });
+    assert.equal(pub.status, "price_pending");
+    assert.equal(pub.status === "price_pending" && pub.message, "თქვენი მოთხოვნა განხილვის პროცესშია. ფასსა და ხელმისაწვდომობას დადასტურებამდე გაცნობებთ.");
   });
 });
 
@@ -251,11 +292,13 @@ describe("quote orchestration — invalidation before booking", () => {
 
     // The tariff changes (fixture only) and the customer re-quotes: the price changes.
     h.setup.tariff = { ...(h.setup.tariff as ServiceTariff), version: 2, perKmMinor: 130 };
-    const second = quoted(await h.request({ ...raw, previousQuoteId: first.quoteId }));
+    h.policy.tariffApproval = { ...h.policy.tariffApproval!, tariffVersion: 2 };
+    const secondResult = await h.request({ ...raw, previousQuoteId: first.quoteId });
+    const second = quoted(secondResult);
     assert.equal(second.priceChange?.changed, true);
     assert.deepEqual(second.priceChange?.previousTotal, first.commercial.total);
-    assert.equal(toPublicQuoteResponse({ status: "quoted", quote: second }, { publishPrices: false }).status, "price_pending");
-    const pub = toPublicQuoteResponse({ status: "quoted", quote: second }, { publishPrices: false });
+    const pub = toPublicQuoteResponse(secondResult, { publishPrices: false });
+    assert.equal(pub.status, "price_pending");
     assert.equal(pub.status === "price_pending" && pub.priceChanged, true);
 
     // Acknowledging the OLD total is not enough.
@@ -338,12 +381,19 @@ describe("quote orchestration — fuel/charging, restricted data and publishing"
     // Test-only clones flagged as non-fixture purely to exercise the publishing gate.
     const tariff: ServiceTariff = { ...FIXTURE_TARIFF, id: "gate-test-tariff", fixture: false };
     const config: PricingEngineConfig = { ...FIXTURE_TBILISI_CONFIG, version: "gate-test-config", fixture: false };
-    const r = await harness({ setup: { tariff, config } }).request(input(PLACES.tbilisi, PLACES.beta));
+    const policy = {
+      tariffApproval: { tariffId: tariff.id, tariffVersion: tariff.version, approval: FIXTURE_ELIGIBLE_POLICY.masterApproval },
+      configApproval: { configVersion: config.version, approval: FIXTURE_ELIGIBLE_POLICY.masterApproval },
+    };
+    // Without approval the gate refuses even a computable price.
+    const refused = await harness({ setup: { tariff, config } }).request(input(PLACES.tbilisi, PLACES.beta));
+    assert.equal(refused.status, "manual_pricing");
+    const r = await harness({ setup: { tariff, config }, policy }).request(input(PLACES.tbilisi, PLACES.beta));
     assert.equal(toPublicQuoteResponse(r, { publishPrices: false }).status, "price_pending");
     const pub = toPublicQuoteResponse(r, { publishPrices: true });
     assert.equal(pub.status, "price_available");
     if (pub.status === "price_available") {
-      assert.deepEqual(Object.keys(pub).sort(), ["excludes", "priceChanged", "quoteId", "status", "total", "validUntil"]);
+      assert.deepEqual(Object.keys(pub).sort(), ["excludes", "message", "priceChanged", "quoteId", "status", "total", "validUntil"]);
       assert.equal(pub.total.amountMinor % 100, 0, "published totals are whole GEL");
       assert.deepEqual([...pub.excludes], ["fuel", "charging"]);
     }
@@ -351,9 +401,10 @@ describe("quote orchestration — fuel/charging, restricted data and publishing"
 
   it("manual pricing is shown to customers only as coarse categories", async () => {
     const r = await harness({ setup: { tariff: null } }).request(input(PLACES.tbilisi, PLACES.beta));
-    assert.deepEqual(toPublicQuoteResponse(r, { publishPrices: true }), { status: "manual_pricing", categories: ["service"] });
+    const manualMessage = "ეს მოთხოვნა ინდივიდუალურად შეფასდება. ფასსა და ხელმისაწვდომობას დაგიდასტურებთ.";
+    assert.deepEqual(toPublicQuoteResponse(r, { publishPrices: true }), { status: "manual_pricing", categories: ["service"], message: manualMessage });
     const noRoute = await harness().request(input(PLACES.beta, PLACES.tbilisi));
-    assert.deepEqual(toPublicQuoteResponse(noRoute, { publishPrices: true }), { status: "manual_pricing", categories: ["route"] });
+    assert.deepEqual(toPublicQuoteResponse(noRoute, { publishPrices: true }), { status: "manual_pricing", categories: ["route"], message: manualMessage });
   });
 });
 
@@ -424,7 +475,11 @@ describe("production guards", () => {
     try {
       assert.throws(() => createMockRouteProvider({ routes: {} }));
       assert.throws(() => createInMemoryQuoteStore());
-      const base = { loadPricingSetup: async () => ({ tariff: null, config: null }), store: { get: async () => null, save: async () => {} } };
+      const base = {
+        automaticPricingPolicy: DEFAULT_AUTOMATIC_PRICING_POLICY,
+        loadPricingSetup: async () => ({ tariff: null, config: null }),
+        store: { get: async () => null, save: async () => {} },
+      };
       assert.throws(() => createQuoteService({ ...base, routeProvider: { id: "mock-routes", computeRoute: async () => ({ ok: false, error: { kind: "disabled", retryable: false } }) } }), QuoteServiceConfigError);
       const real: RouteProvider = { id: "google-routes", computeRoute: async () => ({ ok: false, error: { kind: "disabled", retryable: false } }) };
       assert.throws(() => createQuoteService({ ...base, routeProvider: real, allowFixtures: true }), QuoteServiceConfigError);

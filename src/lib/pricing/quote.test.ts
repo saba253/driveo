@@ -128,7 +128,7 @@ describe("priceQuote — final rounding up to whole GEL (approved)", () => {
   // Explicit zero-cost travel rule so totals can hit exact boundaries (FIXTURE ONLY).
   const freeLegs: PricingEngineConfig = {
     ...FIXTURE_CONFIG,
-    travelRules: [{ ...FIXTURE_CONFIG.travelRules[0], id: "r-free", mode: "none", fare: gel(0), travelMinutes: 0 }],
+    travelRules: [{ ...FIXTURE_CONFIG.travelRules[0], id: "r-free", mode: "none", fare: gel(0), travelMinutes: 0, availability: undefined }],
   };
   const totalWith = async (extraMinor: number) =>
     (

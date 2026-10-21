@@ -1,5 +1,6 @@
 import "server-only";
 
+import { DEFAULT_AUTOMATIC_PRICING_POLICY } from "@/lib/pricing/pilot";
 import { toPublicQuoteResponse, type PublicQuoteResponse } from "@/lib/quotes/public";
 import { createQuoteService, type PricingSetup, type QuoteService } from "@/lib/quotes/service";
 import { createInMemoryQuoteStore, unavailableQuoteStore } from "@/lib/quotes/store";
@@ -61,6 +62,8 @@ export function getQuoteService(): QuoteService {
   const limits = readRoutingSettings(process.env).limits;
   service = createQuoteService({
     routeProvider: selectRouteProvider(),
+    // Everything disabled: no route is eligible for automatic pricing.
+    automaticPricingPolicy: DEFAULT_AUTOMATIC_PRICING_POLICY,
     loadPricingSetup,
     // In-memory store and limiter protect a single dev instance only (see docs/production-readiness.md).
     store: production ? unavailableQuoteStore : createInMemoryQuoteStore(),

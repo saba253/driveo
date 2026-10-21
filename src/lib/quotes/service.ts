@@ -1,4 +1,5 @@
-import type { ManualReason, PricingEngineConfig, QuoteDriver, QuoteRequest, ServiceQuote, ServiceTariff } from "../pricing/engine-types.ts";
+import { evaluateAutomaticPricingEligibility, type AutomaticPricingPolicy, type EligibilityResult } from "../pricing/eligibility.ts";
+import type { ManualReason, PricingEngineConfig, QuoteDriver, QuoteRequest, RouteLookup, ServiceQuote, ServiceTariff } from "../pricing/engine-types.ts";
 import { fingerprintQuoteInputs } from "../pricing/fingerprint.ts";
 import { checkQuoteUsable, priceQuote, pricingContext, supersedeQuote, type UsabilityCheck } from "../pricing/quote.ts";
 import type { RouteProvider, RouteRequest } from "../routing/types.ts";
@@ -26,6 +27,12 @@ export type PricingSetup = {
 
 export type QuoteServiceDeps = {
   routeProvider: RouteProvider;
+  /**
+   * Automatic-pricing gate (required). A request only receives a quote when
+   * this policy says it is eligible; otherwise it goes to manual assessment.
+   * Use DEFAULT_AUTOMATIC_PRICING_POLICY (everything disabled) until approved.
+   */
+  automaticPricingPolicy: AutomaticPricingPolicy;
   /** Loads the currently active pricing setup (tariff, configuration, driver). */
   loadPricingSetup: () => Promise<PricingSetup>;
   store: QuoteStore;
@@ -41,8 +48,16 @@ export type QuoteServiceDeps = {
 export type QuoteServiceResult =
   | { status: "rate_limited"; retryAfterMs: number }
   | { status: "invalid_input"; issues: InputIssue[] }
-  | { status: "quoted"; quote: ServiceQuote }
-  | { status: "manual_pricing"; requestId: string; inputFingerprint: string | null; reasons: readonly ManualReason[] };
+  | { status: "quoted"; quote: ServiceQuote; eligibility: EligibilityResult }
+  | {
+      status: "manual_pricing";
+      requestId: string;
+      inputFingerprint: string | null;
+      /** Pricing-engine reasons (empty when only the eligibility gate refused). */
+      reasons: readonly ManualReason[];
+      /** Why automatic pricing was not allowed; includes the override audit trail. */
+      eligibility: EligibilityResult;
+    };
 
 export type BookingCheck =
   | { ok: true; quote: ServiceQuote }
@@ -103,14 +118,40 @@ export function createQuoteService(deps: QuoteServiceDeps) {
     const requestId = previous?.requestId ?? newId();
     const request = toQuoteRequest(input, requestId);
 
-    // 4. Pricing setup. Without a configuration or tariff, no provider call is made.
+    // 4. Pricing setup and eligibility gate. When automatic pricing is off, or
+    //    there is no configuration or tariff, no provider call is made at all.
     const setup = await deps.loadPricingSetup();
+    const nowIso = now().toISOString();
+    const gate = (route: RouteLookup | null) =>
+      evaluateAutomaticPricingEligibility({
+        request,
+        route,
+        tariff: setup.tariff,
+        config: setup.config,
+        driver: setup.driver,
+        policy: deps.automaticPricingPolicy,
+        now: nowIso,
+        allowFixtures: deps.allowFixtures,
+      });
+
     if (!setup.config) {
-      return { status: "manual_pricing", requestId, inputFingerprint: null, reasons: [{ code: "invalidConfig", detail: "no pricing configuration" }] };
+      return {
+        status: "manual_pricing",
+        requestId,
+        inputFingerprint: null,
+        reasons: [{ code: "invalidConfig", detail: "no pricing configuration" }],
+        eligibility: gate(null),
+      };
     }
-    if (!setup.tariff) {
-      const fp = await fingerprintQuoteInputs(request, pricingContext(null, setup.config, setup.driver));
-      return { status: "manual_pricing", requestId, inputFingerprint: fp, reasons: [{ code: "missingTariff" }] };
+    if (!setup.tariff || !deps.automaticPricingPolicy.automaticPricingEnabled) {
+      const fp = await fingerprintQuoteInputs(request, pricingContext(setup.tariff, setup.config, setup.driver));
+      return {
+        status: "manual_pricing",
+        requestId,
+        inputFingerprint: fp,
+        reasons: setup.tariff ? [] : [{ code: "missingTariff" }],
+        eligibility: gate(null),
+      };
     }
 
     // 5. Road route through the provider abstraction (mock in this step).
@@ -129,19 +170,25 @@ export function createQuoteService(deps: QuoteServiceDeps) {
         supersedes: previous?.quoteId ?? null,
         previousTotal: previous?.commercial.total ?? null,
         computedBy: "server",
-        now: now().toISOString(),
+        now: nowIso,
       },
       allowFixtures: deps.allowFixtures,
     });
 
+    const eligibility = gate(route);
     if (outcome.status === "manual_pricing") {
-      return { status: "manual_pricing", requestId, inputFingerprint: outcome.inputFingerprint, reasons: outcome.reasons };
+      return { status: "manual_pricing", requestId, inputFingerprint: outcome.inputFingerprint, reasons: outcome.reasons, eligibility };
     }
 
-    // 7. Store; the previous version (if any) is marked superseded.
+    // 7. A computable price is not enough: ineligible requests never get a quote.
+    if (!eligibility.eligible) {
+      return { status: "manual_pricing", requestId, inputFingerprint: outcome.quote.inputFingerprint, reasons: [], eligibility };
+    }
+
+    // 8. Store; the previous version (if any) is marked superseded.
     if (previous) await deps.store.save(supersedeQuote(previous, outcome.quote));
     await deps.store.save(outcome.quote);
-    return { status: "quoted", quote: outcome.quote };
+    return { status: "quoted", quote: outcome.quote, eligibility };
   }
 
   /**

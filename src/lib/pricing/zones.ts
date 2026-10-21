@@ -53,7 +53,10 @@ export function findTravelRule(rules: readonly TravelRule[], from: ZoneMatch, to
   return candidates.reduce((best, r) => (specificity(r) > specificity(best) ? r : best));
 }
 
-const isNonNegativeMoney = (m: { amountMinor: number; currency: string }) =>
+const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+const isNonNegativeMoney =(m: { amountMinor: number; currency: string }) =>
   m.currency === "GEL" && Number.isSafeInteger(m.amountMinor) && m.amountMinor >= 0;
 
 /**
@@ -107,6 +110,21 @@ export function validatePricingConfig(config: PricingEngineConfig): string[] {
     if (!Number.isFinite(rule.travelMinutes) || rule.travelMinutes < 0) issues.push(`rule "${rule.id}": travelMinutes must be >= 0`);
     if (rule.mode === "none" && (rule.fare.amountMinor !== 0 || rule.travelMinutes !== 0)) {
       issues.push(`rule "${rule.id}": mode "none" must have zero fare and minutes`);
+    }
+    const a = rule.availability;
+    if (a && a.kind !== "unknown") {
+      const times = a.kind === "frequent" ? [a.firstDeparture, a.lastDeparture] : a.departures;
+      if (times.length === 0 || times.some((t) => !HHMM.test(t))) issues.push(`rule "${rule.id}": availability times must be HH:MM`);
+      if (!Number.isFinite(a.accessMinutes) || a.accessMinutes < 0 || a.accessMinutes > rule.travelMinutes) {
+        issues.push(`rule "${rule.id}": accessMinutes must be between 0 and travelMinutes`);
+      }
+      if (a.kind === "frequent" && a.firstDeparture > a.lastDeparture) issues.push(`rule "${rule.id}": firstDeparture after lastDeparture`);
+      if (a.kind === "timetable" && (!ISO_DAY.test(a.validFrom) || !ISO_DAY.test(a.validTo) || a.validFrom > a.validTo)) {
+        issues.push(`rule "${rule.id}": timetable needs a valid validFrom/validTo date range`);
+      }
+    }
+    if (rule.evidence && (Number.isNaN(Date.parse(rule.evidence.verifiedAt)) || !rule.evidence.source.trim() || !rule.evidence.verifiedBy.trim())) {
+      issues.push(`rule "${rule.id}": evidence needs source, verifiedBy and a valid verifiedAt`);
     }
     const key = [rule.fromZoneId, rule.toZoneId, normalizeLocality(rule.fromLocality ?? ""), normalizeLocality(rule.toLocality ?? "")].join("|");
     if (ruleKeys.has(key)) issues.push(`rule "${rule.id}" duplicates another rule for the same leg`);

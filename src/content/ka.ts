@@ -332,6 +332,15 @@ export const ka = {
     backToTop: "ზემოთ",
   },
 
+  /**
+   * Customer-facing request statuses. Neither claims automatic pricing is
+   * active: every request is still reviewed and confirmed manually.
+   */
+  requestStatus: {
+    under_review: "თქვენი მოთხოვნა განხილვის პროცესშია. ფასსა და ხელმისაწვდომობას დადასტურებამდე გაცნობებთ.",
+    manual_assessment: "ეს მოთხოვნა ინდივიდუალურად შეფასდება. ფასსა და ხელმისაწვდომობას დაგიდასტურებთ.",
+  },
+
   prototype: {
     badge: "პროტოტიპი",
   },
