@@ -106,3 +106,12 @@ or over-limit days all fail safe to manual assessment.
 The 13-hour day and 20 % margin from the research are recorded only as
 proposals (`PROPOSED_OPERATING_POLICY`, `MODERATE_RESEARCH_SCENARIO`) and are
 rejected by the gate.
+
+## 11. Database and admin access (Step 1.7B.1)
+
+The schema, RLS, privileged functions and the admin sign-in with TOTP flow are prepared but **not connected**. See [database-and-auth.md](database-and-auth.md). Blockers before any real booking is stored:
+
+- Apply the migrations to a real Supabase project, with sign-ups disabled and `driveo_private` not exposed.
+- Create the founder account and enroll TOTP immediately.
+- Repeat the negative-access checks against the live project (database-and-auth.md §9). PGlite tests are not a substitute.
+- Booking submission, the notification worker and Telegram pairing remain disabled until their own steps.

@@ -1,6 +1,4 @@
 import type { Metadata, Viewport } from "next";
-import { Footer } from "@/components/layout/Footer";
-import { Header } from "@/components/layout/Header";
 import { brand } from "@/config/brand";
 import { ka } from "@/content/ka";
 import { cn } from "@/lib/cn";
@@ -37,9 +35,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         >
           {ka.a11y.skipToContent}
         </a>
-        <Header />
         {children}
-        <Footer />
       </body>
     </html>
   );
