@@ -39,7 +39,7 @@
   --text-h1: clamp(1.75rem, 1.3rem + 2.2vw, 3.25rem);
   --text-h1--line-height: 1.15;
   --text-h1--letter-spacing: -0.015em;
-  --text-h2: clamp(1.625rem, 1.3rem + 1.4vw, 2.5rem);
+  --text-h2: clamp(1.5rem, 1.2rem + 1.5vw, 2.5rem);
   --text-h2--line-height: 1.2;
   --text-h2--letter-spacing: -0.01em;
   --text-h3: clamp(1.25rem, 1.1rem + 0.6vw, 1.5rem);
@@ -195,6 +195,35 @@
 
 @utility animate-lane {
   animation: lane-flow 2.4s linear infinite;
+}
+
+/* Section reveal: scroll-driven where supported (no JS). Elsewhere, and with
+   reduced motion, content is simply shown. */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .reveal {
+      animation: rise-in linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 35%;
+    }
+  }
+}
+
+/* FAQ accordion: smooth open/close where `::details-content` is supported. */
+@supports selector(::details-content) {
+  :root {
+    interpolate-size: allow-keywords;
+  }
+  .faq-item::details-content {
+    block-size: 0;
+    overflow: clip;
+    transition:
+      block-size var(--duration-slow) var(--ease-out-soft),
+      content-visibility var(--duration-slow) allow-discrete;
+  }
+  .faq-item[open]::details-content {
+    block-size: auto;
+  }
 }
 
 /* Fine film grain for the cinematic hero treatment (inline SVG, no request). */
