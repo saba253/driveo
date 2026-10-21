@@ -2,11 +2,11 @@
 
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { normalizeTotpCode } from "@/lib/auth/admin-access";
+import { canAddBackupFactor, normalizeTotpCode } from "@/lib/auth/admin-access";
 import { createRateLimiter } from "@/lib/routing/usage";
 import { ka } from "@/content/ka";
 import { getAdminContext } from "@/server/admin-auth";
-import { createSupabaseServerClient, readSupabaseConfig } from "@/server/supabase";
+import { createSupabaseServerClient, supabaseConfig } from "@/server/supabase";
 
 /*
  * Admin Server Actions. Each one re-derives the caller's state on the server
@@ -36,7 +36,7 @@ async function attemptAllowed(scope: string): Promise<boolean> {
 }
 
 export async function signInAction(_prev: FormState, form: FormData): Promise<FormState> {
-  const config = readSupabaseConfig();
+  const config = supabaseConfig();
   if (!config) return { error: t.notConfigured.title };
   const email = String(form.get("email") ?? "").trim();
   const password = String(form.get("password") ?? "");
@@ -52,25 +52,20 @@ export async function signInAction(_prev: FormState, form: FormData): Promise<Fo
 
 export type EnrollmentState = { error: string | null; factorId?: string; qrCode?: string; secret?: string };
 
-/** First-time TOTP setup. Only for an active admin who has NO verified factor yet. */
-export async function startEnrollmentAction(): Promise<EnrollmentState> {
-  const { access, supabase } = await getAdminContext();
-  if (access.kind !== "needs_mfa_enrollment" || !supabase) return { error: t.mfa.failed };
+type Supabase = NonNullable<Awaited<ReturnType<typeof getAdminContext>>["supabase"]>;
 
+async function beginTotpEnrollment(supabase: Supabase, friendlyName: string): Promise<EnrollmentState> {
   // Remove abandoned, never-verified factors so setup can be restarted safely.
   const { data: factors } = await supabase.auth.mfa.listFactors();
   for (const f of factors?.all ?? []) {
     if (f.factor_type === "totp" && f.status === "unverified") await supabase.auth.mfa.unenroll({ factorId: f.id });
   }
-
-  const { data, error } = await supabase.auth.mfa.enroll({ factorType: "totp", friendlyName: "DRIVEO admin" });
+  const { data, error } = await supabase.auth.mfa.enroll({ factorType: "totp", friendlyName });
   if (error || !data) return { error: t.mfa.failed };
   return { error: null, factorId: data.id, qrCode: data.totp.qr_code, secret: data.totp.secret };
 }
 
-export async function verifyEnrollmentAction(prev: EnrollmentState, form: FormData): Promise<EnrollmentState> {
-  const { access, supabase } = await getAdminContext();
-  if (access.kind !== "needs_mfa_enrollment" || !supabase) return { error: t.mfa.failed };
+async function completeTotpEnrollment(supabase: Supabase, prev: EnrollmentState, form: FormData): Promise<EnrollmentState | null> {
   const code = normalizeTotpCode(form.get("code"));
   const factorId = String(form.get("factorId") ?? "");
   if (!code) return { ...prev, error: t.mfa.invalidCode };
@@ -83,7 +78,37 @@ export async function verifyEnrollmentAction(prev: EnrollmentState, form: FormDa
 
   const { error } = await supabase.auth.mfa.challengeAndVerify({ factorId, code });
   if (error) return { ...prev, error: t.mfa.invalidCode };
+  return null;
+}
+
+/** First-time TOTP setup. Only for an active admin who has NO verified factor yet. */
+export async function startEnrollmentAction(): Promise<EnrollmentState> {
+  const { access, supabase } = await getAdminContext();
+  if (access.kind !== "needs_mfa_enrollment" || !supabase) return { error: t.mfa.failed };
+  return beginTotpEnrollment(supabase, "DRIVEO admin");
+}
+
+export async function verifyEnrollmentAction(prev: EnrollmentState, form: FormData): Promise<EnrollmentState> {
+  const { access, supabase } = await getAdminContext();
+  if (access.kind !== "needs_mfa_enrollment" || !supabase) return { error: t.mfa.failed };
+  const failed = await completeTotpEnrollment(supabase, prev, form);
+  if (failed) return failed;
   redirect("/admin");
+}
+
+/** Backup authenticator on a second device. Only at AAL2, and only while exactly one factor exists. */
+export async function startBackupEnrollmentAction(): Promise<EnrollmentState> {
+  const { access, supabase, verifiedTotpFactors } = await getAdminContext();
+  if (!canAddBackupFactor(access, verifiedTotpFactors) || !supabase) return { error: t.mfa.failed };
+  return beginTotpEnrollment(supabase, "DRIVEO backup");
+}
+
+export async function verifyBackupEnrollmentAction(prev: EnrollmentState, form: FormData): Promise<EnrollmentState> {
+  const { access, supabase, verifiedTotpFactors } = await getAdminContext();
+  if (!canAddBackupFactor(access, verifiedTotpFactors) || !supabase) return { error: t.mfa.failed };
+  const failed = await completeTotpEnrollment(supabase, prev, form);
+  if (failed) return failed;
+  redirect("/admin/security");
 }
 
 export async function verifyChallengeAction(_prev: FormState, form: FormData): Promise<FormState> {
@@ -104,7 +129,7 @@ export async function verifyChallengeAction(_prev: FormState, form: FormData): P
 
 /** Signs out everywhere: revokes all refresh tokens for this user, then clears cookies. */
 export async function signOutAction(): Promise<void> {
-  const config = readSupabaseConfig();
+  const config = supabaseConfig();
   if (config) {
     const supabase = await createSupabaseServerClient(config);
     await supabase.auth.signOut({ scope: "global" });

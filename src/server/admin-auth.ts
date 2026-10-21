@@ -3,42 +3,48 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { redirect } from "next/navigation";
 import { adminRedirectFor, decideAdminAccess, type AdminAccess, type AuthLevel } from "@/lib/auth/admin-access";
-import { createSupabaseServerClient, readSupabaseConfig } from "./supabase";
+import { createSupabaseServerClient, supabaseConfig } from "./supabase";
 
 /**
  * Admin Data Access Layer. Every admin page and every admin Server Action calls
  * this; the proxy is not an authorization boundary. Results are never cached.
  */
 
-export type AdminContext = { access: AdminAccess; supabase: SupabaseClient | null };
+export type AdminContext = { access: AdminAccess; supabase: SupabaseClient | null; verifiedTotpFactors: number };
 
 export async function getAdminContext(): Promise<AdminContext> {
-  const config = readSupabaseConfig();
-  if (!config) return { access: decideAdminAccess(emptyFacts(false)), supabase: null };
+  const config = supabaseConfig();
+  if (!config) return { access: decideAdminAccess(emptyFacts(false)), supabase: null, verifiedTotpFactors: 0 };
 
   const supabase = await createSupabaseServerClient(config);
   // getUser() asks the Auth server to validate the token (a cookie alone is not trusted).
   const { data: userData, error: userError } = await supabase.auth.getUser();
   const userId = userError ? null : (userData.user?.id ?? null);
-  if (!userId) return { access: decideAdminAccess(emptyFacts(true)), supabase };
+  if (!userId) return { access: decideAdminAccess(emptyFacts(true)), supabase, verifiedTotpFactors: 0 };
 
-  const [{ data: aal }, { data: factors }, { data: adminRow }] = await Promise.all([
-    supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
+  const [{ data: claimsData }, { data: factors }, { data: adminRow }] = await Promise.all([
+    // The assurance level is read from the signature-verified JWT claims (the same
+    // `aal` claim the database checks), never from the unverified session object.
+    supabase.auth.getClaims(),
     supabase.auth.mfa.listFactors(),
     // RLS: before MFA a user can read only their own row; nothing else.
     supabase.from("admin_users").select("is_active").eq("user_id", userId).maybeSingle(),
   ]);
 
-  const currentLevel = aal?.currentLevel === "aal1" || aal?.currentLevel === "aal2" ? (aal.currentLevel as AuthLevel) : null;
+  const claims = claimsData?.claims;
+  const aal = claims && claims.sub === userId ? claims.aal : null;
+  const currentLevel = aal === "aal1" || aal === "aal2" ? (aal as AuthLevel) : null;
+  const verifiedTotpFactors = factors?.totp.length ?? 0;
   return {
     access: decideAdminAccess({
       configured: true,
       userId,
       currentLevel,
-      verifiedTotpFactors: factors?.totp.length ?? 0,
+      verifiedTotpFactors,
       adminRecord: adminRow ? { isActive: adminRow.is_active === true } : null,
     }),
     supabase,
+    verifiedTotpFactors,
   };
 }
 

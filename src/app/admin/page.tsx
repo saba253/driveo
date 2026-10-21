@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Suspense } from "react";
 import { SignOutButton } from "@/components/admin/SignOutButton";
 import { ka } from "@/content/ka";
@@ -39,7 +40,12 @@ async function Dashboard() {
           <h1 className="text-h2 font-bold text-fg">{t.dashboard.title}</h1>
           <p className="mt-2 max-w-prose text-sm leading-relaxed text-fg-muted">{t.dashboard.lead}</p>
         </div>
-        <SignOutButton />
+        <div className="flex items-center gap-3">
+          <Link href="/admin/security" className="text-sm text-fg-muted underline-offset-4 hover:text-fg hover:underline">
+            {t.security.link}
+          </Link>
+          <SignOutButton />
+        </div>
       </div>
 
       {error ? (

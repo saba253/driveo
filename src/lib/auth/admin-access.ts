@@ -55,6 +55,17 @@ export function adminRedirectFor(access: AdminAccess, page: "login" | "mfa" | "d
   }
 }
 
+/**
+ * TOTP factors per admin: the primary authenticator plus ONE backup on a
+ * separate device. Supabase recovery codes are experimental, so they are not used.
+ */
+export const MAX_TOTP_FACTORS = 2;
+
+/** A backup factor may be added only by a fully authorized admin who has exactly one. */
+export function canAddBackupFactor(access: AdminAccess, verifiedTotpFactors: number): boolean {
+  return access.kind === "ok" && verifiedTotpFactors >= 1 && verifiedTotpFactors < MAX_TOTP_FACTORS;
+}
+
 /** A TOTP code as typed: 6 digits, spaces tolerated. */
 export function normalizeTotpCode(raw: unknown): string | null {
   if (typeof raw !== "string") return null;

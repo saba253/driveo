@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { hardenAuthCookie, readSupabaseConfig } from "@/lib/supabase/config";
 
 /**
  * Admin-only proxy: refreshes the Supabase session cookies before admin pages
@@ -12,16 +13,16 @@ import { NextResponse, type NextRequest } from "next/server";
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
-  if (url && anonKey) {
-    const supabase = createServerClient(url, anonKey, {
+  const result = readSupabaseConfig(process.env);
+  if (result.ok) {
+    const secure = process.env.NODE_ENV === "production";
+    const supabase = createServerClient(result.config.url, result.config.publishableKey, {
       cookies: {
         getAll: () => request.cookies.getAll(),
         setAll: (toSet) => {
           for (const { name, value } of toSet) request.cookies.set(name, value);
           response = NextResponse.next({ request });
-          for (const { name, value, options } of toSet) response.cookies.set(name, value, options);
+          for (const { name, value, options } of toSet) response.cookies.set(name, value, hardenAuthCookie(options, secure));
         },
       },
     });

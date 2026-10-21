@@ -1,18 +1,21 @@
 # DRIVEO — database foundation and admin authentication (Step 1.7B.1)
 
-Status: **prepared, not connected.** No Supabase project exists yet. No admin account has been created. Booking submission is still off, and nothing sends Telegram or email messages.
+Status: **prepared, not connected.** Founder setup and live checks: [supabase-setup.md](supabase-setup.md). No Supabase project exists yet. No admin account has been created. Booking submission is still off, and nothing sends Telegram or email messages.
 
 ## 1. Files
 
 | Path | Purpose |
 | --- | --- |
-| `supabase/migrations/20261022000100_booking_foundation.sql` | Tables, constraints, indexes and append-only triggers |
-| `supabase/migrations/20261022000200_booking_functions.sql` | The lifecycle rules plus every function that writes (all SECURITY DEFINER) |
-| `supabase/migrations/20261022000300_security.sql` | Revokes, minimal grants and RLS policies |
+| `supabase/migrations/20261021000100_booking_foundation.sql` | Tables, constraints, indexes and append-only triggers |
+| `supabase/migrations/20261021000200_booking_functions.sql` | The lifecycle rules plus every function that writes (all SECURITY DEFINER) |
+| `supabase/migrations/20261021000300_security.sql` | Revokes, minimal grants and RLS policies |
 | `supabase/tests/supabase-shim.sql` | **Test only.** A minimal imitation of Supabase roles, `auth.*` and default grants |
 | `supabase/tests/database.test.ts` | Authorization, lifecycle, evidence, outbox, rate-limit and pairing tests (PGlite) |
+| `supabase/verification/post-migration-checks.sql` | Read-only checks to run in the SQL Editor after applying the migrations |
+| `scripts/live-security-check.ts` | Live access checks against the DEVELOPMENT project (not part of `npm test`) |
 | `src/lib/booking/lifecycle.ts` | TypeScript mirror of the transition rules. A test compares it with the database. |
 | `src/lib/auth/admin-access.ts` | The pure admin-access decision, unit-tested |
+| `src/lib/supabase/config.ts` | Server-only env reading, secret-key refusal, production gate, cookie hardening |
 | `src/server/supabase.ts`, `src/server/admin-auth.ts` | Server-only Supabase client and the admin data-access layer |
 | `src/proxy.ts` | Refreshes the session and sets no-index/no-store headers on `/admin` only |
 | `src/app/admin/*` | Sign-in, MFA and dashboard shell |
@@ -109,6 +112,10 @@ An admin checkbox is **not** proof. `admin_record_price_acceptance` requires all
   - The limiter is in memory, per instance. It will move to `consume_rate_limit` once the service-role server code exists.
 - Sign-out uses `scope: "global"`, which revokes every refresh token. Access tokens that were already issued stay valid until they expire (default 1 h). The database's active-admin check still applies.
 - `/admin` responses send `X-Robots-Tag: noindex`, `Cache-Control: private, no-store`, `X-Frame-Options: DENY` and `Referrer-Policy: no-referrer`. The pages also set `robots: noindex`. Nothing on the public site links to `/admin`.
+- Configuration is server-only (`SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`). Secret or `service_role` keys are refused, as is any secret in a `NEXT_PUBLIC_` variable. In production, admin login stays off unless `ADMIN_AUTH_PRODUCTION_ENABLED=true`.
+- Auth cookies are HttpOnly, SameSite=Lax, Secure in production, and expire after at most 12 hours (the library default is 400 days).
+- The assurance level is read from the signature-verified JWT claims (`getClaims()`), the same `aal` claim the database checks.
+- An admin at AAL2 can add **one** backup authenticator at `/admin/security` (maximum 2 factors).
 - With no Supabase environment variables, every admin route shows «ადმინისტრირება ჯერ არ არის დაკავშირებული» and connects to nothing.
 
 ## 7. What the tests cover, and what they don't
@@ -143,31 +150,8 @@ Step 1.7B.2 must repeat the negative-access checks against the real project befo
 
 ## 8. Account recovery (solo founder)
 
-| Situation | Procedure |
-| --- | --- |
-| Lost authenticator device | 1. Sign in to the **Supabase dashboard**, which is protected by its own MFA. 2. Auth → Users → the founder → delete the TOTP factor. 3. Sign in to `/admin` and enroll again. 4. Review `admin_audit_log`. |
-| Forgotten admin password | Use the dashboard: send a password-reset email to the founder address. Never set a password over chat. |
-| Suspected compromise | 1. `update public.admin_users set is_active = false, deactivated_at = now() where user_id = '<id>'`, run in the SQL editor. This cuts access at once. 2. Sign the user out of all sessions in the dashboard. 3. Rotate the password and the TOTP factor. 4. Rotate the service-role key if there's any doubt. 5. Review the audit log. 6. Reactivate. |
-| Lost access to the Supabase dashboard itself | Use the Supabase account's recovery codes. Store them offline when setting up the account. |
+See [supabase-setup.md §4](supabase-setup.md#4-mfa-backup-factor-and-account-recovery): primary and backup TOTP factors, lost devices, password reset, suspected compromise.
 
-Keep the dashboard account (GitHub or email login + MFA) separate from the admin app account where practical. Store recovery codes offline.
+## 9. Founder actions
 
-## 9. Founder actions for Step 1.7B.2 (not done yet)
-
-1. Create a Supabase project, EU region. Turn on MFA for the dashboard account and store its recovery codes offline.
-2. Authentication settings:
-   - **disable sign-ups**
-   - enable TOTP MFA
-   - keep email confirmation on
-   - set the site URL and redirect URLs
-3. API settings: make sure the exposed schemas are `public` (and `graphql_public` if it's used). **Never add `driveo_private`.**
-4. Apply the three migrations in order: `supabase db push`, or the SQL editor. The shim file is **not** applied.
-5. Create the founder user in the dashboard (Auth → Users → Add user) with a unique, strong password. Then insert their `admin_users` and `drivers` rows in the SQL editor. No IDs or secrets go into code or chat.
-6. Put `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` into `.env.local` and the hosting environment yourself. Don't add the service-role key until it's needed.
-7. Sign in to `/admin` at once and enroll TOTP. Enroll **immediately after** creating the account: until it's enrolled, anyone who knows the password could enroll their own factor.
-8. Run the live negative checks:
-   - anon REST read of each table returns 401/permission denied
-   - an RPC as anon is denied
-   - an AAL1 session sees no bookings
-   - an AAL2 session sees them
-   - `driveo_private` is not reachable over REST
+See [supabase-setup.md](supabase-setup.md). It replaces the earlier checklist.

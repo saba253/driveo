@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { adminRedirectFor, decideAdminAccess, normalizeTotpCode, type AdminAccessFacts } from "./admin-access.ts";
+import { adminRedirectFor, canAddBackupFactor, decideAdminAccess, normalizeTotpCode, type AdminAccessFacts } from "./admin-access.ts";
 
 const full: AdminAccessFacts = {
   configured: true,
@@ -58,4 +58,14 @@ test("TOTP codes: exactly six digits", () => {
   assert.equal(normalizeTotpCode("12345"), null);
   assert.equal(normalizeTotpCode("12345a"), null);
   assert.equal(normalizeTotpCode(123456), null);
+});
+
+test("a backup factor can be added only at AAL2 by an active admin with exactly one factor", () => {
+  const ok = { kind: "ok", userId: "x" } as const;
+  assert.equal(canAddBackupFactor(ok, 1), true);
+  assert.equal(canAddBackupFactor(ok, 2), false);
+  assert.equal(canAddBackupFactor(ok, 0), false);
+  for (const kind of ["needs_mfa_challenge", "needs_mfa_enrollment", "not_admin", "signed_out", "not_configured"] as const) {
+    assert.equal(canAddBackupFactor({ kind }, 1), false, kind);
+  }
 });

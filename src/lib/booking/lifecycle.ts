@@ -1,6 +1,6 @@
 /**
  * Booking lifecycle — the TypeScript mirror of the database rules in
- * supabase/migrations/20261022000200_booking_functions.sql
+ * supabase/migrations/20261021000200_booking_functions.sql
  * (driveo_private.booking_transition_rules). The database is authoritative;
  * a test compares both tables so they cannot drift apart.
  *

@@ -673,3 +673,30 @@ describe("Telegram pairing challenge (prepared, inactive)", () => {
   });
 });
 
+
+/* ------------------------------------------- live verification script (offline) */
+
+describe("post-migration check script", () => {
+  test("query 1 of supabase/verification/post-migration-checks.sql reports no problems", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const sql = readFileSync(join(import.meta.dirname, "..", "verification", "post-migration-checks.sql"), "utf8");
+    const query1 = sql.slice(sql.indexOf("-- Query 1"), sql.indexOf("-- Query 2"));
+    const { rows } = await db.query(query1);
+    assert.deepEqual(rows, []);
+  });
+
+  test("the check script detects a weakened grant", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const sql = readFileSync(join(import.meta.dirname, "..", "verification", "post-migration-checks.sql"), "utf8");
+    const query1 = sql.slice(sql.indexOf("-- Query 1"), sql.indexOf("-- Query 2"));
+    await db.exec("begin; grant select on public.booking_contacts to anon;");
+    try {
+      const { rows } = await db.query<{ check: string; detail: string }>(query1);
+      assert.deepEqual(rows.map((r) => `${r.check}: ${r.detail}`), ["anon has a table privilege: public.booking_contacts SELECT"]);
+    } finally {
+      await db.exec("rollback;");
+    }
+  });
+});

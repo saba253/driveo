@@ -2,7 +2,9 @@
 
 import { useActionState, useState, useTransition } from "react";
 import {
+  startBackupEnrollmentAction,
   startEnrollmentAction,
+  verifyBackupEnrollmentAction,
   verifyChallengeAction,
   verifyEnrollmentAction,
   type EnrollmentState,
@@ -45,16 +47,20 @@ export function MfaChallengeForm() {
   );
 }
 
-export function MfaEnrollForm() {
+/** `backup` adds a second authenticator for an admin who is already at AAL2. */
+export function MfaEnrollForm({ backup = false }: { backup?: boolean }) {
+  const start = backup ? startBackupEnrollmentAction : startEnrollmentAction;
   const [enrollment, setEnrollment] = useState<EnrollmentState | null>(null);
   const [starting, startTransition] = useTransition();
-  const [state, action, pending] = useActionState<EnrollmentState, FormData>(verifyEnrollmentAction, { error: null });
+  const [state, action, pending] = useActionState<EnrollmentState, FormData>(backup ? verifyBackupEnrollmentAction : verifyEnrollmentAction, {
+    error: null,
+  });
 
   if (!enrollment?.factorId) {
     return (
       <div className="grid gap-5">
         <FormMessage>{enrollment?.error}</FormMessage>
-        <Button size="lg" disabled={starting} onClick={() => startTransition(async () => setEnrollment(await startEnrollmentAction()))}>
+        <Button size="lg" disabled={starting} onClick={() => startTransition(async () => setEnrollment(await start()))}>
           {starting ? t.pending : t.enrollStart}
         </Button>
       </div>
