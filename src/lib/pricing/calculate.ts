@@ -1,3 +1,4 @@
+import { DEFAULT_PRICING_CONFIG, quoteExpiry, type PricingConfig } from "./config.ts";
 import { addMoney, maxMoney, money, sumMoney, type Money } from "./money.ts";
 import type { QuoteLine, QuoteSnapshot, QuoteStatus, ServicePriceBreakdown, ServicePriceInput } from "./types.ts";
 
@@ -8,7 +9,7 @@ import type { QuoteLine, QuoteSnapshot, QuoteStatus, ServicePriceBreakdown, Serv
  *   total   = driving + returnTransport + Σ additionalCharges
  *
  * The minimum applies to the driving service only; return transport and
- * agreed extras are pass-through costs added on top. Fuel is never included.
+ * agreed extras are pass-through costs added on top. Fuel and charging are never included.
  *
  * The same function will run on the server; only a server-computed snapshot
  * may be authoritative (see createQuoteSnapshot).
@@ -73,7 +74,7 @@ export function calculateServicePrice(input: ServicePriceInput): ServicePriceBre
     drivingTotal,
     minimumApplied,
     total: sumMoney(lines.map((l) => l.amount)),
-    excludes: ["fuel"],
+    excludes: ["fuel", "charging"],
   };
 }
 
@@ -82,7 +83,9 @@ type SnapshotMeta = {
   version: number;
   computedBy: "client" | "server";
   computedAt: string;
+  /** Explicit expiry; otherwise derived from `config.quoteValidityHours`. */
   validUntil?: string | null;
+  config?: PricingConfig;
   /** Server-side only; ignored (forced to "estimate") for client calculations. */
   status?: Exclude<QuoteStatus, "estimate">;
 };
@@ -102,7 +105,10 @@ export function createQuoteSnapshot(input: ServicePriceInput, meta: SnapshotMeta
     computedBy: meta.computedBy,
     authoritative: server,
     computedAt: meta.computedAt,
-    validUntil: meta.validUntil ?? null,
+    validUntil:
+      meta.validUntil !== undefined
+        ? meta.validUntil
+        : quoteExpiry(meta.computedAt, (meta.config ?? DEFAULT_PRICING_CONFIG).quoteValidityHours),
     inputs: {
       tariffId: input.tariff.id,
       tariffVersion: input.tariff.version,

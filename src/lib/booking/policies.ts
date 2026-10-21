@@ -5,8 +5,15 @@
  */
 export const FUEL_POLICY = {
   id: "fuel-customer-provided",
-  /** Approved by the founder on 2026-10-21. Bump when the wording changes. */
-  version: "2026-10-21",
-  /** Fuel is never part of the driver service price. */
+  /**
+   * Increment on every material change to the customer-facing wording.
+   *  v1 (2026-10-21): customer provides fuel; extra refuelling reimbursed with receipts.
+   *  v2 (2026-10-21): extended to LPG, CNG and EV charging; extra refuelling or
+   *                   charging reimbursed at documented actual cost.
+   */
+  version: 2,
+  effectiveFrom: "2026-10-21",
+  /** Fuel and charging are never part of the service price. */
   includedInServicePrice: false,
+  covers: ["petrol", "diesel", "lpg", "cng", "electricity"],
 } as const;

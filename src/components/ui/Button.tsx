@@ -2,7 +2,7 @@ import type { ComponentPropsWithoutRef } from "react";
 import { cn } from "@/lib/cn";
 
 type Variant = "primary" | "secondary" | "ghost";
-type Size = "sm" | "md" | "lg";
+type Size = "sm" | "md" | "lg" | "lgCompact";
 
 const variants: Record<Variant, string> = {
   primary: "bg-accent text-accent-ink hover:bg-accent-hover hover:shadow-glow",
@@ -16,6 +16,8 @@ const sizes: Record<Size, string> = {
   sm: "min-h-11 px-4 text-sm",
   md: "min-h-12 px-5 text-[0.9375rem]",
   lg: "min-h-14 px-7 text-base",
+  /** lg height with tight padding, for icon-led secondary actions beside a full-width button. */
+  lgCompact: "min-h-14 min-w-14 px-4 text-base",
 };
 
 type StyleOptions = { variant?: Variant; size?: Size; className?: string };

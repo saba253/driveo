@@ -2,8 +2,14 @@ import type { Money } from "./money.ts";
 import type { RoadRoute } from "../routing/types.ts";
 
 /**
- * Service-price model. Fuel is deliberately absent: it is never part of the
- * driver service price (see FUEL_POLICY) and is modelled in src/lib/fuel.
+ * Service-price model. Fuel and charging are deliberately absent: they are never
+ * part of the service price (see FUEL_POLICY) and are modelled in src/lib/fuel.
+ *
+ * Business rules:
+ *  - the minimum fee applies to the driving service (base + distance) only;
+ *  - driver return transport is a per-booking cost added after the minimum;
+ *  - explicit extras are added after the minimum;
+ *  - only server-computed quotes can be authoritative.
  */
 
 /** A versioned set of rates. Production tariffs are configured by the business, never hardcoded in UI. */
@@ -23,7 +29,7 @@ export type Tariff = {
   scope: { driverId: string | null; region: string | null };
 };
 
-/** How the driver gets back after delivery — a pass-through cost, priced per job. */
+/** How the driver gets back after delivery — calculated per booking, added after the minimum. */
 export type ReturnTransport = {
   mode: "bus" | "minibus" | "train" | "taxi" | "other" | "none";
   cost: Money;
@@ -66,15 +72,15 @@ export type ServicePriceBreakdown = {
   minimumApplied: boolean;
   total: Money;
   /** Costs never included in this total. */
-  excludes: readonly ["fuel"];
+  excludes: readonly ["fuel", "charging"];
 };
 
 export type QuoteStatus =
   /** Calculated in the browser — indicative only, never binding. */
   | "estimate"
-  /** Recalculated on the server, awaiting driver/founder review. */
+  /** Recalculated on the server, awaiting the admin availability review. */
   | "pending_review"
-  /** Agreed with the customer; the snapshot is the price of record. */
+  /** Booking accepted after availability review; the snapshot is the price of record. */
   | "agreed"
   | "expired"
   | "superseded";

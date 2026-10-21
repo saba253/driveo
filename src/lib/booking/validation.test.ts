@@ -1,15 +1,18 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { formatPhone, parsePhone } from "./phone.ts";
-import { EMPTY_DRAFT, type BookingDraft } from "./types.ts";
-import { STAGE_FIELDS, isSameLocation, toBookingRequest, validateStage } from "./validation.ts";
+import { FUEL_POLICY } from "./policies.ts";
+import { EMPTY_DRAFT, OTHER_CITY, type BookingDraft } from "./types.ts";
+import { STAGE_FIELDS, effectiveCity, isSameLocation, toBookingRequest, validateStage } from "./validation.ts";
 
 const NOW = { date: "2026-10-21", time: "10:30" };
 
 const VALID: BookingDraft = {
   pickupCity: "თბილისი",
+  pickupCityOther: "",
   pickupAddress: "ჭავჭავაძის გამზ. 1",
   deliveryCity: "ბათუმი",
+  deliveryCityOther: "",
   deliveryAddress: "რუსთაველის ქ. 10",
   pickupDate: "2026-10-25",
   pickupTime: "09:00",
@@ -44,17 +47,23 @@ describe("parsePhone", () => {
 });
 
 describe("validateStage", () => {
-  it("requires every route field when empty", () => {
+  it("requires every route field when empty (other-city fields only when chosen)", () => {
     const errors = validateStage(EMPTY_DRAFT, "route", NOW);
-    assert.deepEqual(Object.keys(errors).sort(), [...STAGE_FIELDS.route].sort());
+    const expected = STAGE_FIELDS.route.filter((f) => f !== "pickupCityOther" && f !== "deliveryCityOther");
+    assert.deepEqual(Object.keys(errors).sort(), [...expected].sort());
     assert.ok(Object.values(errors).every((c) => c === "required"));
   });
 
-  it("requires every details field, including both confirmations", () => {
-    const errors = validateStage(EMPTY_DRAFT, "details", NOW);
-    assert.deepEqual(Object.keys(errors).sort(), [...STAGE_FIELDS.details].sort());
-    assert.equal(errors.fuelPolicyAccepted, "mustConfirm");
+  it("requires every vehicle field, including the drivable confirmation", () => {
+    const errors = validateStage(EMPTY_DRAFT, "vehicle", NOW);
+    assert.deepEqual(Object.keys(errors).sort(), [...STAGE_FIELDS.vehicle].sort());
     assert.equal(errors.vehicleDrivable, "mustConfirm");
+  });
+
+  it("requires every contact field, including the fuel/charging acknowledgement", () => {
+    const errors = validateStage(EMPTY_DRAFT, "contact", NOW);
+    assert.deepEqual(Object.keys(errors).sort(), [...STAGE_FIELDS.contact].sort());
+    assert.equal(errors.fuelPolicyAccepted, "mustConfirm");
   });
 
   it("rejects past dates and already-passed times today", () => {
@@ -73,8 +82,57 @@ describe("validateStage", () => {
   });
 
   it("rejects an invalid phone and missing fuel-policy acknowledgement", () => {
-    const errors = validateStage({ ...VALID, customerPhone: "12345", fuelPolicyAccepted: false }, "details", NOW);
+    const errors = validateStage({ ...VALID, customerPhone: "12345", fuelPolicyAccepted: false }, "contact", NOW);
     assert.deepEqual(errors, { customerPhone: "invalidPhone", fuelPolicyAccepted: "mustConfirm" });
+  });
+
+  it("accepts international numbers in the contact step", () => {
+    assert.deepEqual(validateStage({ ...VALID, customerPhone: "+49 151 23456789" }, "contact", NOW), {});
+  });
+});
+
+describe("other city", () => {
+  const other = (city: string): BookingDraft => ({ ...VALID, deliveryCity: OTHER_CITY, deliveryCityOther: city });
+
+  it("requires a typed city name when 'other' is chosen", () => {
+    assert.equal(validateStage(other(""), "route", NOW).deliveryCityOther, "required");
+    assert.equal(validateStage(other("   "), "route", NOW).deliveryCityOther, "required");
+    assert.equal(validateStage(other("ა"), "route", NOW).deliveryCityOther, "tooShort");
+    assert.equal(validateStage(other("ა".repeat(61)), "route", NOW).deliveryCityOther, "tooLong");
+  });
+
+  it("accepts Georgian and Latin names, rejects digits and symbols", () => {
+    for (const name of ["ბორჯომი", "წყალტუბო", "Sachkhere", "Kazbegi-Stepantsminda", "St. Nino"]) {
+      assert.equal(validateStage(other(name), "route", NOW).deliveryCityOther, undefined, name);
+    }
+    for (const name of ["12345", "ბორჯომი 2", "@city", "-ბორჯომი"]) {
+      assert.equal(validateStage(other(name), "route", NOW).deliveryCityOther, "invalidCity", name);
+    }
+  });
+
+  it("ignores the typed name, but keeps it, when a listed city is selected again", () => {
+    const back = { ...other("ბორჯომი"), deliveryCity: "ბათუმი" };
+    assert.deepEqual(validateStage(back, "route", NOW), {});
+    assert.equal(back.deliveryCityOther, "ბორჯომი");
+    assert.equal(effectiveCity(back, "delivery"), "ბათუმი");
+  });
+
+  it("uses the typed city in same-location checks and in the request", () => {
+    const same: BookingDraft = {
+      ...VALID,
+      pickupCity: OTHER_CITY,
+      pickupCityOther: "ბორჯომი",
+      deliveryCity: OTHER_CITY,
+      deliveryCityOther: "  ბორჯომი ",
+      deliveryAddress: VALID.pickupAddress,
+    };
+    assert.equal(isSameLocation(same), true);
+
+    const result = toBookingRequest(other("  ბორჯომი  "), NOW);
+    assert.ok(result.ok);
+    if (!result.ok) return;
+    assert.deepEqual(result.request.route.delivery, { city: "ბორჯომი", address: "რუსთაველის ქ. 10", cityEnteredManually: true });
+    assert.equal(result.request.route.pickup.cityEnteredManually, false);
   });
 });
 
@@ -87,6 +145,9 @@ describe("toBookingRequest", () => {
     assert.equal(result.request.contact.phone, "+995555123456");
     assert.equal(result.request.schedule.isPreferenceOnly, true);
     assert.equal(result.request.acknowledgements.fuelPolicy.policyId, "fuel-customer-provided");
+    assert.equal(result.request.acknowledgements.fuelPolicy.policyVersion, FUEL_POLICY.version);
+    assert.equal(FUEL_POLICY.version, 2);
+    assert.deepEqual([...FUEL_POLICY.covers], ["petrol", "diesel", "lpg", "cng", "electricity"]);
     assert.equal(result.request.meta.assignedDriverId, null);
   });
 

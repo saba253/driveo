@@ -13,12 +13,12 @@ import { RouteStage } from "./RouteStage";
 import { fieldId, useBookingForm, type Stage } from "./useBookingForm";
 
 /**
- * Booking card — functional client-side prototype (Step 1.5).
- * Route & time → vehicle & contact → review → prototype confirmation.
+ * Booking card — functional client-side prototype.
+ * Route & time → vehicle, then contact (two sections of step 2) → review → prototype confirmation.
  * No request is sent or stored anywhere.
  */
 const t = ka.booking;
-const STEP_NUMBER: Record<Exclude<Stage, "done">, number> = { route: 1, details: 2, review: 3 };
+const STEP_NUMBER: Record<Exclude<Stage, "done">, number> = { route: 1, vehicle: 2, contact: 2, review: 3 };
 const TOTAL_STEPS = 3;
 
 /** Moves focus to the first invalid control of a stage, in display order. */
@@ -38,7 +38,8 @@ export function BookingCard({ className }: { className?: string }) {
   const moved = useRef(false);
   const [announcement, setAnnouncement] = useState("");
 
-  // After a stage change made by the customer, bring the card into view and focus its heading.
+  // After a stage change made by the customer, bring the card into view and focus the
+  // open section's heading (step 2) or the step heading.
   useEffect(() => {
     if (!moved.current) return;
     moved.current = false;
@@ -47,7 +48,8 @@ export function BookingCard({ className }: { className?: string }) {
       const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       card.scrollIntoView({ block: "start", behavior: reduce ? "auto" : "smooth" });
     }
-    headingRef.current?.focus({ preventScroll: true });
+    const target = card?.querySelector<HTMLElement>("[data-focus-target]") ?? headingRef.current;
+    target?.focus({ preventScroll: true });
   }, [stage]);
 
   const go = (fn: () => void) => {
@@ -75,7 +77,8 @@ export function BookingCard({ className }: { className?: string }) {
   };
 
   const stepNumber = stage === "done" ? null : STEP_NUMBER[stage];
-  const primaryLabel = editingFromReview ? t.backToReview : stage === "route" ? t.next : t.toReview;
+  const primaryLabel = editingFromReview ? t.backToReview : stage === "contact" ? t.toReview : t.next;
+  const showBack = (stage === "vehicle" || stage === "contact") && !editingFromReview;
 
   return (
     <section
@@ -122,14 +125,15 @@ export function BookingCard({ className }: { className?: string }) {
         {announcement}
       </p>
 
-      <div key={stage} className="mt-5 animate-rise" style={{ animationDuration: "380ms" }}>
-        {(stage === "route" || stage === "details") && (
+      {/* Keyed by step, so moving between the two sections of step 2 does not replay the entrance. */}
+      <div key={stepNumber ?? stage} className="mt-5 animate-rise" style={{ animationDuration: "380ms" }}>
+        {(stage === "route" || stage === "vehicle" || stage === "contact") && (
           <form noValidate onSubmit={onSubmitStage(stage)} aria-labelledby="booking-title">
-            {stage === "route" ? <RouteStage form={form} /> : <DetailsStage form={form} />}
+            {stage === "route" ? <RouteStage form={form} /> : <DetailsStage form={form} section={stage} onEditVehicle={() => go(() => form.goBack("contact"))} />}
 
-            <div className={cn("mt-6 grid gap-3", stage === "details" && !editingFromReview && "grid-cols-[auto_minmax(0,1fr)]")}>
-              {stage === "details" && !editingFromReview && (
-                <Button variant="secondary" size="lg" onClick={() => go(form.goBack)}>
+            <div className={cn("mt-6 grid gap-3", showBack && "grid-cols-[auto_minmax(0,1fr)]")}>
+              {showBack && (
+                <Button variant="secondary" size="lgCompact" onClick={() => go(() => form.goBack(stage))}>
                   <Icon name="arrowLeft" size={18} />
                   <span className="sr-only min-[400px]:not-sr-only">{t.back}</span>
                 </Button>

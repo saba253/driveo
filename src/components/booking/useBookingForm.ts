@@ -4,7 +4,14 @@ import { useCallback, useState } from "react";
 import { EMPTY_DRAFT, type BookingDraft, type BookingField } from "@/lib/booking/types";
 import { STAGE_FIELDS, localNow, toBookingRequest, validateStage, type FormStage, type ValidationErrors } from "@/lib/booking/validation";
 
+/**
+ * route → vehicle → contact → review → done.
+ * "vehicle" and "contact" are two progressive sections of the same visual step.
+ */
 export type Stage = FormStage | "review" | "done";
+
+const NEXT: Record<FormStage, Stage> = { route: "vehicle", vehicle: "contact", contact: "review" };
+const PREVIOUS: Partial<Record<FormStage, FormStage>> = { vehicle: "route", contact: "vehicle" };
 
 type State = {
   draft: BookingDraft;
@@ -19,9 +26,12 @@ type State = {
 
 const INITIAL: State = { draft: EMPTY_DRAFT, stage: "route", errors: {}, attempted: {}, editingFromReview: false };
 
+const isFormStage = (s: Stage): s is FormStage => s === "route" || s === "vehicle" || s === "contact";
+
 /**
  * Client-only booking flow. Nothing here is sent or stored: the final
  * step builds a BookingRequest in memory to prove the data is complete.
+ * The draft is kept in full when moving backwards or editing.
  */
 export function useBookingForm() {
   const [state, setState] = useState<State>(INITIAL);
@@ -29,9 +39,8 @@ export function useBookingForm() {
   const setField = useCallback(<K extends BookingField>(field: K, value: BookingDraft[K]) => {
     setState((s) => {
       const draft = { ...s.draft, [field]: value };
-      const stage = s.stage === "route" || s.stage === "details" ? s.stage : null;
       // Live re-validation only after a submit attempt, so errors never appear while typing for the first time.
-      const errors = stage && s.attempted[stage] ? validateStage(draft, stage, localNow()) : s.errors;
+      const errors = isFormStage(s.stage) && s.attempted[s.stage] ? validateStage(draft, s.stage, localNow()) : s.errors;
       return { ...s, draft, errors };
     });
   }, []);
@@ -43,7 +52,7 @@ export function useBookingForm() {
       const failed = Object.keys(errors).length > 0;
       setState((s) => {
         if (failed) return { ...s, errors, attempted: { ...s.attempted, [stage]: true } };
-        const next: Stage = s.editingFromReview || stage === "details" ? "review" : "details";
+        const next = s.editingFromReview ? "review" : NEXT[stage];
         return { ...s, errors: {}, stage: next, editingFromReview: next === "review" ? false : s.editingFromReview };
       });
       return failed ? errors : null;
@@ -51,8 +60,9 @@ export function useBookingForm() {
     [state.draft],
   );
 
-  const goBack = useCallback(() => {
-    setState((s) => ({ ...s, stage: "route", errors: {}, editingFromReview: false }));
+  const goBack = useCallback((from: FormStage) => {
+    const previous = PREVIOUS[from];
+    if (previous) setState((s) => ({ ...s, stage: previous, errors: {} }));
   }, []);
 
   const editStage = useCallback((stage: FormStage) => {
@@ -67,12 +77,12 @@ export function useBookingForm() {
   const confirm = useCallback((): ValidationErrors | null => {
     const result = toBookingRequest(state.draft, localNow());
     if (!result.ok) {
-      const firstStage: FormStage = STAGE_FIELDS.route.some((f) => result.errors[f]) ? "route" : "details";
+      const firstStage = (["route", "vehicle", "contact"] as const).find((st) => STAGE_FIELDS[st].some((f) => result.errors[f])) ?? "route";
       setState((s) => ({
         ...s,
         stage: firstStage,
         errors: result.errors,
-        attempted: { route: true, details: true },
+        attempted: { route: true, vehicle: true, contact: true },
         editingFromReview: true,
       }));
       return result.errors;

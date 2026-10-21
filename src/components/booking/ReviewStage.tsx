@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { Icon } from "@/components/ui/Icon";
 import { ka } from "@/content/ka";
 import { formatPhone, parsePhone } from "@/lib/booking/phone";
-import type { FormStage } from "@/lib/booking/validation";
+import { effectiveCity, type FormStage } from "@/lib/booking/validation";
 import type { BookingForm } from "./useBookingForm";
 
 const t = ka.booking;
@@ -42,10 +42,10 @@ export function ReviewStage({ form }: { form: BookingForm }) {
       <dl className="divide-y divide-line rounded-lg border border-line">
         <Group title={r.route} stage="route" form={form}>
           <Row label={t.from}>
-            {draft.pickupCity}, {draft.pickupAddress.trim()}
+            {effectiveCity(draft, "pickup")}, {draft.pickupAddress.trim()}
           </Row>
           <Row label={t.to}>
-            {draft.deliveryCity}, {draft.deliveryAddress.trim()}
+            {effectiveCity(draft, "delivery")}, {draft.deliveryAddress.trim()}
           </Row>
         </Group>
         <Group title={r.schedule} stage="route" form={form}>
@@ -54,7 +54,7 @@ export function ReviewStage({ form }: { form: BookingForm }) {
             {draft.pickupTime} <span className="text-fg-subtle">· {r.timeNote}</span>
           </Row>
         </Group>
-        <Group title={r.vehicle} stage="details" form={form}>
+        <Group title={r.vehicle} stage="vehicle" form={form}>
           <Row label={r.makeModel}>
             {draft.vehicleMake.trim()} {draft.vehicleModel.trim()}
           </Row>
@@ -62,7 +62,7 @@ export function ReviewStage({ form }: { form: BookingForm }) {
           <Row label={t.transmission}>{draft.transmission && t.transmissions[draft.transmission]}</Row>
           <Row label={r.condition}>{r.drivableYes}</Row>
         </Group>
-        <Group title={r.contact} stage="details" form={form}>
+        <Group title={r.contact} stage="contact" form={form}>
           <Row label={t.name}>{draft.customerName.trim()}</Row>
           <Row label={t.phone}>
             <span dir="ltr">{phone ? formatPhone(phone) : draft.customerPhone}</span>
@@ -71,9 +71,14 @@ export function ReviewStage({ form }: { form: BookingForm }) {
         </Group>
       </dl>
 
-      <div className="flex gap-3 text-sm">
-        <span className="font-semibold text-fg">{r.price}:</span>
-        <span className="text-fg-muted">{r.priceText}</span>
+      {/* No price is shown until the server-side pricing engine exists. */}
+      <div className="rounded-lg border border-line p-4 text-sm">
+        <p className="font-semibold text-fg">{r.price}</p>
+        <p className="mt-1 leading-relaxed text-fg-muted">{r.priceText}</p>
+        <p className="mt-2 flex gap-2 text-xs leading-relaxed text-fg-subtle">
+          <span className="mt-1.5 size-1 shrink-0 rounded-full bg-accent/70" aria-hidden="true" />
+          {r.energyNote}
+        </p>
       </div>
     </div>
   );

@@ -9,14 +9,24 @@
 export const POWERTRAINS = ["petrol", "diesel", "lpg", "cng", "hybrid", "plugin_hybrid", "electric"] as const;
 export type Powertrain = (typeof POWERTRAINS)[number];
 
+/**
+ * Sentinel value for the "other city" option. When selected, the customer types
+ * the city name into `pickupCityOther` / `deliveryCityOther`.
+ */
+export const OTHER_CITY = "__other__";
+
 export const TRANSMISSIONS = ["automatic", "manual"] as const;
 export type Transmission = (typeof TRANSMISSIONS)[number];
 
 /** Raw form state: everything the customer can type or toggle, as entered. */
 export type BookingDraft = {
+  /** A listed city name, or OTHER_CITY. */
   pickupCity: string;
+  /** Free-text city, used only when pickupCity is OTHER_CITY. Kept when switching back and forth. */
+  pickupCityOther: string;
   pickupAddress: string;
   deliveryCity: string;
+  deliveryCityOther: string;
   deliveryAddress: string;
   /** Local date, YYYY-MM-DD. */
   pickupDate: string;
@@ -36,8 +46,10 @@ export type BookingField = keyof BookingDraft;
 
 export const EMPTY_DRAFT: BookingDraft = {
   pickupCity: "",
+  pickupCityOther: "",
   pickupAddress: "",
   deliveryCity: "",
+  deliveryCityOther: "",
   deliveryAddress: "",
   pickupDate: "",
   pickupTime: "",
@@ -51,7 +63,12 @@ export const EMPTY_DRAFT: BookingDraft = {
   fuelPolicyAccepted: false,
 };
 
-export type Place = { city: string; address: string };
+export type Place = {
+  city: string;
+  address: string;
+  /** True when the city was typed by the customer rather than chosen from the list. */
+  cityEnteredManually: boolean;
+};
 
 /** A validated, normalized request — the shape a future API will accept. */
 export type BookingRequest = {
@@ -75,7 +92,7 @@ export type BookingRequest = {
     phone: string;
   };
   acknowledgements: {
-    fuelPolicy: { accepted: true; policyId: string; policyVersion: string };
+    fuelPolicy: { accepted: true; policyId: string; policyVersion: number };
   };
   meta: {
     source: "web";

@@ -1,6 +1,6 @@
 import { parsePhone } from "./phone.ts";
 import { FUEL_POLICY } from "./policies.ts";
-import { POWERTRAINS, TRANSMISSIONS, type BookingDraft, type BookingField, type BookingRequest } from "./types.ts";
+import { OTHER_CITY, POWERTRAINS, TRANSMISSIONS, type BookingDraft, type BookingField, type BookingRequest } from "./types.ts";
 
 /**
  * Pure validation. Returns language-neutral codes; the UI maps them to
@@ -18,6 +18,7 @@ export type ValidationCode =
   | "sameLocation"
   | "invalidPhone"
   | "invalidOption"
+  | "invalidCity"
   | "mustConfirm";
 
 export type ValidationErrors = Partial<Record<BookingField, ValidationCode>>;
@@ -33,24 +34,32 @@ export function localNow(at: Date = new Date()): LocalNow {
   };
 }
 
-/** Fields collected on each form stage, in display order. */
+/**
+ * Fields collected on each form stage, in display order. "vehicle" and
+ * "contact" are the two progressive sections of the UI's second step.
+ */
 export const STAGE_FIELDS = {
-  route: ["pickupCity", "pickupAddress", "deliveryCity", "deliveryAddress", "pickupDate", "pickupTime"],
-  details: [
-    "vehicleMake",
-    "vehicleModel",
-    "powertrain",
-    "transmission",
-    "vehicleDrivable",
-    "customerName",
-    "customerPhone",
-    "fuelPolicyAccepted",
+  route: [
+    "pickupCity",
+    "pickupCityOther",
+    "pickupAddress",
+    "deliveryCity",
+    "deliveryCityOther",
+    "deliveryAddress",
+    "pickupDate",
+    "pickupTime",
   ],
+  vehicle: ["vehicleMake", "vehicleModel", "powertrain", "transmission", "vehicleDrivable"],
+  contact: ["customerName", "customerPhone", "fuelPolicyAccepted"],
 } as const satisfies Record<string, readonly BookingField[]>;
+
+export const ALL_FIELDS: readonly BookingField[] = [...STAGE_FIELDS.route, ...STAGE_FIELDS.vehicle, ...STAGE_FIELDS.contact];
 
 export type FormStage = keyof typeof STAGE_FIELDS;
 
 export const LIMITS = {
+  cityMin: 2,
+  cityMax: 60,
   addressMin: 3,
   addressMax: 200,
   vehicleMax: 60,
@@ -69,6 +78,16 @@ function isRealDate(value: string): boolean {
   return date.getUTCFullYear() === y && date.getUTCMonth() === mo - 1 && date.getUTCDate() === d;
 }
 
+/* Letters in any script with combining marks, plus spaces, dots, apostrophes and hyphens. */
+const CITY_NAME = /^[\p{L}\p{M}][\p{L}\p{M}\s.'’-]*$/u;
+
+/** The city the customer means: the listed one, or their typed name for "other". */
+export function effectiveCity(draft: BookingDraft, end: "pickup" | "delivery"): string {
+  const city = end === "pickup" ? draft.pickupCity : draft.deliveryCity;
+  const other = end === "pickup" ? draft.pickupCityOther : draft.deliveryCityOther;
+  return city === OTHER_CITY ? other.trim().replace(/\s+/g, " ") : city;
+}
+
 /** Normalizes an address for comparison only: case, punctuation and spacing are ignored. */
 export function normalizeAddress(value: string): string {
   return value
@@ -78,11 +97,11 @@ export function normalizeAddress(value: string): string {
     .trim();
 }
 
-export function isSameLocation(draft: Pick<BookingDraft, "pickupCity" | "pickupAddress" | "deliveryCity" | "deliveryAddress">): boolean {
-  if (!draft.pickupCity || !draft.deliveryCity || !draft.pickupAddress.trim() || !draft.deliveryAddress.trim()) return false;
-  return (
-    draft.pickupCity === draft.deliveryCity && normalizeAddress(draft.pickupAddress) === normalizeAddress(draft.deliveryAddress)
-  );
+export function isSameLocation(draft: BookingDraft): boolean {
+  const from = effectiveCity(draft, "pickup");
+  const to = effectiveCity(draft, "delivery");
+  if (!from || !to || !draft.pickupAddress.trim() || !draft.deliveryAddress.trim()) return false;
+  return normalizeAddress(from) === normalizeAddress(to) && normalizeAddress(draft.pickupAddress) === normalizeAddress(draft.deliveryAddress);
 }
 
 function text(value: string, min: number, max: number): ValidationCode | undefined {
@@ -93,11 +112,19 @@ function text(value: string, min: number, max: number): ValidationCode | undefin
   return undefined;
 }
 
+function cityName(value: string): ValidationCode | undefined {
+  return text(value, LIMITS.cityMin, LIMITS.cityMax) ?? (CITY_NAME.test(value.trim()) ? undefined : "invalidCity");
+}
+
 function validateField(field: BookingField, draft: BookingDraft, now: LocalNow): ValidationCode | undefined {
   switch (field) {
     case "pickupCity":
     case "deliveryCity":
       return draft[field] ? undefined : "required";
+    case "pickupCityOther":
+      return draft.pickupCity === OTHER_CITY ? cityName(draft.pickupCityOther) : undefined;
+    case "deliveryCityOther":
+      return draft.deliveryCity === OTHER_CITY ? cityName(draft.deliveryCityOther) : undefined;
     case "pickupAddress":
       return text(draft.pickupAddress, LIMITS.addressMin, LIMITS.addressMax);
     case "deliveryAddress":
@@ -144,7 +171,7 @@ export function validateStage(draft: BookingDraft, stage: FormStage, now: LocalN
 }
 
 export function validateDraft(draft: BookingDraft, now: LocalNow): ValidationErrors {
-  return validateFields(draft, [...STAGE_FIELDS.route, ...STAGE_FIELDS.details], now);
+  return validateFields(draft, ALL_FIELDS, now);
 }
 
 export type BuildResult = { ok: true; request: BookingRequest } | { ok: false; errors: ValidationErrors };
@@ -161,8 +188,16 @@ export function toBookingRequest(draft: BookingDraft, now: LocalNow): BuildResul
     ok: true,
     request: {
       route: {
-        pickup: { city: draft.pickupCity, address: draft.pickupAddress.trim() },
-        delivery: { city: draft.deliveryCity, address: draft.deliveryAddress.trim() },
+        pickup: {
+          city: effectiveCity(draft, "pickup"),
+          address: draft.pickupAddress.trim(),
+          cityEnteredManually: draft.pickupCity === OTHER_CITY,
+        },
+        delivery: {
+          city: effectiveCity(draft, "delivery"),
+          address: draft.deliveryAddress.trim(),
+          cityEnteredManually: draft.deliveryCity === OTHER_CITY,
+        },
       },
       vehicle: {
         make: draft.vehicleMake.trim(),

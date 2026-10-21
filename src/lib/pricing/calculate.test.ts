@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { estimateEnergy } from "../fuel/estimate.ts";
 import { PricingError, calculateServicePrice, createQuoteSnapshot } from "./calculate.ts";
+import { DEFAULT_PRICING_CONFIG, isQuoteExpired, quoteExpiry } from "./config.ts";
 import { gel, money } from "./money.ts";
 import type { ServicePriceInput, Tariff } from "./types.ts";
 
@@ -144,20 +145,40 @@ describe("createQuoteSnapshot", () => {
     assert.ok(Object.isFrozen(s) && Object.isFrozen(s.breakdown) && Object.isFrozen(s.breakdown.lines[0]));
   });
 
+  it("expires after the configured validity (proposed default: 24 hours)", () => {
+    assert.equal(DEFAULT_PRICING_CONFIG.quoteValidityHours, 24);
+    const s = createQuoteSnapshot(input, { quoteId: "q1", version: 1, computedBy: "server", computedAt: "2026-10-21T08:00:00.000Z" });
+    assert.equal(s.validUntil, "2026-10-22T08:00:00.000Z");
+    assert.equal(isQuoteExpired(s.validUntil, "2026-10-22T07:59:59.000Z"), false);
+    assert.equal(isQuoteExpired(s.validUntil, "2026-10-22T08:00:00.000Z"), true);
+
+    const short = createQuoteSnapshot(input, {
+      quoteId: "q2",
+      version: 1,
+      computedBy: "server",
+      computedAt: "2026-10-21T08:00:00.000Z",
+      config: { quoteValidityHours: 2 },
+    });
+    assert.equal(short.validUntil, "2026-10-21T10:00:00.000Z");
+    assert.equal(quoteExpiry("2026-10-21T08:00:00.000Z", 0.5), "2026-10-21T08:30:00.000Z");
+    assert.throws(() => quoteExpiry("not a date", 24), RangeError);
+    assert.throws(() => quoteExpiry("2026-10-21T08:00:00.000Z", 0), RangeError);
+  });
+
   it("rejects invalid versions", () => {
     assert.throws(() => createQuoteSnapshot(input, { quoteId: "q", version: 0, computedBy: "server", computedAt: "x" }), PricingError);
   });
 });
 
-describe("fuel stays outside the service price", () => {
-  it("never contains a fuel line and its total equals the sum of its lines", () => {
+describe("fuel and charging stay outside the service price", () => {
+  it("never contains a fuel or charging line and its total equals the sum of its lines", () => {
     const r = calculateServicePrice({
       route: fixtureRoute(220),
       tariff: FIXTURE_TARIFF,
       returnTransport: { mode: "bus", cost: gel(12) },
     });
-    assert.ok(r.excludes.includes("fuel"));
-    assert.ok(r.lines.every((l) => !/fuel/i.test(l.code)));
+    assert.deepEqual([...r.excludes], ["fuel", "charging"]);
+    assert.ok(r.lines.every((l) => !/fuel|charg|energy/i.test(l.code)));
     assert.equal(
       r.total.amountMinor,
       r.lines.reduce((sum, l) => sum + l.amount.amountMinor, 0),
@@ -180,8 +201,22 @@ describe("fuel stays outside the service price", () => {
       },
     });
 
-    assert.equal(fuel.status, "estimated");
-    assert.equal(fuel.includedInServicePrice, false);
+    const charging = estimateEnergy({
+      distanceKm: 220,
+      carrier: "electricity",
+      consumption: { carrier: "electricity", unit: "kWh", per100km: 17, source: "manufacturer" },
+      price: {
+        carrier: "electricity",
+        unit: "kWh",
+        pricePerUnit: gel(0.4), // fixture, not a market price
+        source: { name: "fixture", updatedAt: "2026-10-21T00:00:00Z" },
+      },
+    });
+
+    for (const e of [fuel, charging]) {
+      assert.equal(e.status, "estimated");
+      assert.equal(e.includedInServicePrice, false);
+    }
     assert.equal(calculateServicePrice(input).total.amountMinor, before);
   });
 });
