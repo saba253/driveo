@@ -19,6 +19,13 @@ export const brand = {
     email: null as string | null,
     telegram: null as string | null,
   },
+  /**
+   * Hero photograph. While null, the hero uses a CSS/SVG cinematic treatment.
+   * To use a photo: add an optimized image under /public/images (≈2400px wide,
+   * dark, subject on the right) and set e.g. { src: "/images/hero.jpg", width: 2400, height: 1600 }.
+   * Alt text lives in content (hero.imageAlt).
+   */
+  heroImage: null as { src: string; width: number; height: number } | null,
 } as const;
 
 export type Brand = typeof brand;

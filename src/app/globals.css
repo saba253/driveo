@@ -30,8 +30,10 @@
   --color-transparent: transparent;
 
   /* Fluid type scale (mobile → desktop) */
-  /* Mobile minimums are sized so long Georgian words (e.g. ავტომობილისთვის) fit a 320px screen. */
-  --text-display: clamp(1.875rem, 1.2rem + 3.6vw, 4.5rem);
+  /* Display size is fitted to long Georgian words: "პროფესიონალის" is ~9.2em wide
+     at weight 700, so it must stay whole in a 239px column (279px phone) and in
+     the ~440px desktop text column at 1024px. Desktop curve is set below. */
+  --text-display: clamp(1.5rem, 0.35rem + 7vw, 3rem);
   --text-display--line-height: 1.12;
   --text-display--letter-spacing: -0.02em;
   --text-h1: clamp(1.75rem, 1.3rem + 2.2vw, 3.25rem);
@@ -63,6 +65,12 @@
 
   /* Layout */
   --container-page: 76rem;
+}
+
+@media (width >= 64rem) {
+  :root {
+    --text-display: clamp(2.75rem, 4.3vw, 3.75rem);
+  }
 }
 
 /* Font families reference next/font CSS variables set on <html>. */
@@ -124,7 +132,85 @@
      map it to Mtavruli capitals. Use it only on Latin labels if at all. */
 }
 
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    /* Keep anchored targets clear of the sticky header. */
+    scroll-padding-top: 5rem;
+  }
+
+  /* Native date/time pickers: keep the browser's indicator, tuned to the palette. */
+  input[type="date"]::-webkit-calendar-picker-indicator,
+  input[type="time"]::-webkit-calendar-picker-indicator {
+    cursor: pointer;
+    opacity: 0.65;
+    transition: opacity var(--duration-fast);
+  }
+  input[type="date"]:hover::-webkit-calendar-picker-indicator,
+  input[type="time"]:hover::-webkit-calendar-picker-indicator {
+    opacity: 1;
+  }
+  /* Empty native date/time fields render their format hint in the subtle tone. */
+  input[type="date"]:invalid,
+  input[type="time"]:invalid {
+    color: var(--color-fg-subtle);
+  }
+}
+
+/* Entrance motion: content rises in once on load. Pure CSS, no JS gating,
+   so content is never hidden if scripts fail. */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Moving lane marking in the hero visual. */
+@keyframes lane-flow {
+  to {
+    stroke-dashoffset: -96;
+  }
+}
+
+@utility animate-rise {
+  animation: rise-in 700ms var(--ease-out-soft) both;
+  animation-delay: var(--delay, 0ms);
+}
+
+@utility animate-fade {
+  animation: fade-in 1200ms var(--ease-out-soft) both;
+  animation-delay: var(--delay, 0ms);
+}
+
+@utility animate-lane {
+  animation: lane-flow 2.4s linear infinite;
+}
+
+/* Fine film grain for the cinematic hero treatment (inline SVG, no request). */
+@utility bg-grain {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
 @media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .animate-lane {
+    animation: none;
+  }
+
   *,
   *::before,
   *::after {
