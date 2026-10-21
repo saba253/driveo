@@ -96,6 +96,7 @@ async function testBooking(url: string): Promise<string | null> {
   const service = client(url, secret);
   const booking = {
     pricing_mode: "manual_assessment",
+    eligibility_reasons: ["test_submission"],
     pickup_city: "თბილისი",
     pickup_address: "სატესტო ქუჩა 1 (TEST)",
     delivery_city: "რუსთავი",

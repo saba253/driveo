@@ -48,3 +48,6 @@ next-env.d.ts
 
 # documented, value-free template
 !.env.example
+
+# Supabase CLI link state (project ref, pooler host, versions) — local only
+/supabase/.temp/

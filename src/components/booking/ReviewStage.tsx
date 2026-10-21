@@ -31,13 +31,17 @@ export function PrototypeNotice({ title, text, id }: { title: string; text: stri
   );
 }
 
-export function ReviewStage({ form }: { form: BookingForm }) {
+export function ReviewStage({ form, mode = "prototype" }: { form: BookingForm; mode?: "prototype" | "test" }) {
   const { draft } = form;
   const phone = parsePhone(draft.customerPhone);
 
   return (
     <div className="space-y-5">
-      <PrototypeNotice title={r.notice} text={r.noticeText} />
+      {mode === "test" ? (
+        <PrototypeNotice title={t.test.reviewNotice} text={t.test.reviewNoticeText} />
+      ) : (
+        <PrototypeNotice title={r.notice} text={r.noticeText} />
+      )}
 
       <dl className="divide-y divide-line rounded-lg border border-line">
         <Group title={r.route} stage="route" form={form}>
@@ -74,7 +78,7 @@ export function ReviewStage({ form }: { form: BookingForm }) {
       {/* No price is shown until the server-side pricing engine exists. */}
       <div className="rounded-lg border border-line p-4 text-sm">
         <p className="font-semibold text-fg">{r.price}</p>
-        <p className="mt-1 leading-relaxed text-fg-muted">{r.priceText}</p>
+        <p className="mt-1 leading-relaxed text-fg-muted">{mode === "test" ? t.test.priceText : r.priceText}</p>
         <p className="mt-2 flex gap-2 text-xs leading-relaxed text-fg-subtle">
           <span className="mt-1.5 size-1 shrink-0 rounded-full bg-accent/70" aria-hidden="true" />
           {r.energyNote}

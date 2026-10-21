@@ -115,3 +115,7 @@ The schema, RLS, privileged functions and the admin sign-in with TOTP flow are p
 - Create the founder account and enroll TOTP immediately.
 - Repeat the negative-access checks against the live project (database-and-auth.md §9). PGlite tests are not a substitute.
 - Booking submission, the notification worker and Telegram pairing remain disabled until their own steps.
+
+## 12. Booking submissions (Step 1.7C.1)
+
+`POST /api/bookings` and the form's submission states exist but are **off**: `BOOKING_SUBMISSIONS` defaults to `off`, and its only other value, `test`, is refused in production. See [booking-submissions.md](booking-submissions.md) §8 for the blockers before real customers can submit: approved Terms and Privacy Policy, bot protection, notifications, the live access checks, and insurance and liability.

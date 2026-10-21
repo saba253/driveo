@@ -3,6 +3,7 @@ import { ButtonLink } from "@/components/ui/Button";
 import { Container } from "@/components/ui/Container";
 import { Icon } from "@/components/ui/Icon";
 import { ka } from "@/content/ka";
+import { bookingFormMode } from "@/server/bookings";
 import { HeroVisual } from "./HeroVisual";
 
 const t = ka.hero;
@@ -38,7 +39,8 @@ export function Hero() {
           </div>
         </div>
 
-        <BookingCard className="min-w-0 animate-rise [--delay:200ms]" />
+        {/* "prototype" unless the server-side flag enables development TEST submissions. */}
+        <BookingCard mode={bookingFormMode()} className="min-w-0 animate-rise [--delay:200ms]" />
       </Container>
     </section>
   );

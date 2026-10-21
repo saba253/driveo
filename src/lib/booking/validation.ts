@@ -19,7 +19,11 @@ export type ValidationCode =
   | "invalidPhone"
   | "invalidOption"
   | "invalidCity"
-  | "mustConfirm";
+  | "mustConfirm"
+  /** Server-side only: further ahead than bookings are accepted. */
+  | "dateTooFar"
+  /** Server-side only: control characters or other text that cannot be stored. */
+  | "invalidText";
 
 export type ValidationErrors = Partial<Record<BookingField, ValidationCode>>;
 
