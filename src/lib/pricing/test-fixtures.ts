@@ -8,6 +8,7 @@
  *  Never import this file from application code.
  */
 import type { PricingEngineConfig, ProviderRoute, QuoteRequest, ServiceTariff, TravelRule } from "./engine-types.ts";
+import { HOME_BASE_ZONE, INITIAL_HOME_BASE } from "./base.ts";
 import { gel } from "./money.ts";
 
 export const FIXTURE_TARIFF: ServiceTariff = {
@@ -58,7 +59,35 @@ export const FIXTURE_CONFIG: PricingEngineConfig = {
   overnight: { mode: "disabled" },
 };
 
-export const fixtureRoute = (distanceKm: number, durationMinutes: number): ProviderRoute => ({
+/**
+ * Same engine with the REAL configured home base (Tbilisi, see base.ts) but
+ * FIXTURE fares and minutes and fictional destination zones. These are not
+ * real travel costs to or from Tbilisi.
+ */
+export const FIXTURE_TBILISI_CONFIG: PricingEngineConfig = {
+  ...FIXTURE_CONFIG,
+  base: INITIAL_HOME_BASE,
+  zones: [
+    HOME_BASE_ZONE,
+    { id: "beta", name: "Beta (fixture)", localities: ["Beta", "ბეტა"] },
+    { id: "gamma", name: "Gamma (fixture)", localities: ["Gamma", "გამა"] },
+    { id: "delta", name: "Delta (fixture, no rules)", localities: ["Delta"] },
+  ],
+  travelRules: [
+    rule({ id: "t-tbilisi-tbilisi", fromZoneId: "tbilisi", toZoneId: "tbilisi", mode: "taxi", fare: gel(10), travelMinutes: 30 }),
+    rule({ id: "t-tbilisi-beta", fromZoneId: "tbilisi", toZoneId: "beta", mode: "minibus", fare: gel(20), travelMinutes: 180 }),
+    rule({ id: "t-beta-tbilisi", fromZoneId: "beta", toZoneId: "tbilisi", mode: "minibus", fare: gel(20), travelMinutes: 180 }),
+    rule({ id: "t-tbilisi-gamma", fromZoneId: "tbilisi", toZoneId: "gamma", mode: "train", fare: gel(25), travelMinutes: 200 }),
+    rule({ id: "t-gamma-tbilisi", fromZoneId: "gamma", toZoneId: "tbilisi", mode: "train", fare: gel(25), travelMinutes: 200 }),
+    // A second driver based in Beta (fixture): their own positioning/return rules.
+    rule({ id: "t-beta-beta", fromZoneId: "beta", toZoneId: "beta", mode: "taxi", fare: gel(8), travelMinutes: 20 }),
+    rule({ id: "t-beta-gamma", fromZoneId: "beta", toZoneId: "gamma", mode: "minibus", fare: gel(15), travelMinutes: 120 }),
+    rule({ id: "t-gamma-beta", fromZoneId: "gamma", toZoneId: "beta", mode: "minibus", fare: gel(15), travelMinutes: 120 }),
+    // Delta: no rules at all.
+  ],
+};
+
+export const fixtureRoute =(distanceKm: number, durationMinutes: number): ProviderRoute => ({
   provider: "fixture-provider",
   method: "road",
   distanceKm,

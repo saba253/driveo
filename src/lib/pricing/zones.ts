@@ -13,7 +13,7 @@ export function normalizeLocality(name: string): string {
       .replace(/[.,;:"'()«»„“”]/g, " ")
       .replace(/\s+/g, " ")
       .trim()
-      // "ქ. თბილისი", "ქალაქი თბილისი", "city of Tbilisi", "Tbilisi city"
+      // "ქ. <name>", "ქალაქი <name>", "city of <name>", "<name> city"
       .replace(/^(ქ|ქალაქი|city of|city)\s+/u, "")
       .replace(/\s+city$/u, "")
       .trim()

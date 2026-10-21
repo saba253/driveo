@@ -4,6 +4,7 @@ import type {
   CommercialLine,
   ManualReason,
   OvernightCheck,
+  QuoteDriver,
   PricingEngineConfig,
   QuoteOutcome,
   QuoteRequest,
@@ -45,6 +46,8 @@ export type PriceQuoteArgs = {
   tariff: ServiceTariff | null;
   config: PricingEngineConfig;
   meta: QuoteMeta;
+  /** Driver-specific base; when omitted the config's default base is used. */
+  driver?: QuoteDriver | null;
   /** Tests only: allow tariffs marked `fixture: true`. Never set in application code. */
   allowFixtures?: boolean;
 };
@@ -120,8 +123,12 @@ export async function priceQuote(args: PriceQuoteArgs): Promise<QuoteOutcome> {
     if (issues.length > 0) reasons.push({ code: "invalidTariff", detail: issues.join(", ") });
   }
 
-  // 3. Zones
-  const base = matchLocality(config.zones, config.base.locality);
+  // 3. Base and zones — the base comes from configuration or the driver, never from code.
+  const baseDef = args.driver?.base ?? config.base;
+  const base = matchLocality(config.zones, baseDef.locality);
+  if (!base || base.zoneId !== baseDef.zoneId) {
+    reasons.push({ code: "invalidDriverBase", detail: `${args.driver?.id ?? "default"}: ${baseDef.locality} / ${baseDef.zoneId}` });
+  }
   const pickupZone = matchLocality(config.zones, request.pickup.locality);
   const deliveryZone = matchLocality(config.zones, request.delivery.locality);
   if (!pickupZone) reasons.push({ code: "unknownPickupLocality", detail: request.pickup.locality });
@@ -138,8 +145,8 @@ export async function priceQuote(args: PriceQuoteArgs): Promise<QuoteOutcome> {
   }
   const positioning = resolveLeg(config.travelRules, base, pickupZone, request.overrides?.positioning);
   const ret = resolveLeg(config.travelRules, deliveryZone, base, request.overrides?.return);
-  if (positioning === "missing") reasons.push({ code: "missingPositioningRule", detail: `${config.base.zoneId} → ${pickupZone?.zoneId}` });
-  if (ret === "missing") reasons.push({ code: "missingReturnRule", detail: `${deliveryZone?.zoneId} → ${config.base.zoneId}` });
+  if (positioning === "missing") reasons.push({ code: "missingPositioningRule", detail: `${baseDef.zoneId} → ${pickupZone?.zoneId}` });
+  if (ret === "missing") reasons.push({ code: "missingReturnRule", detail: `${deliveryZone?.zoneId} → ${baseDef.zoneId}` });
 
   // 6. Extras — explicit, unique, GEL, and never fuel or charging.
   const codes = new Set<string>();
@@ -212,6 +219,7 @@ export async function priceQuote(args: PriceQuoteArgs): Promise<QuoteOutcome> {
       currency: "GEL",
       tariffId: tariff.id,
       tariffVersion: tariff.version,
+      driverId: args.driver?.id ?? null,
       zones: { base: base.zoneId, pickup: pickupZone.zoneId, delivery: deliveryZone.zoneId },
       lines,
       drivingSubtotal,

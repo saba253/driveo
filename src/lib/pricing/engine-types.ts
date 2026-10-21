@@ -87,11 +87,20 @@ export type PlausibilityLimits = {
   maxRoadToStraightRatio: number | null;
 };
 
+/** Where a driver starts each job and returns to afterwards. */
+export type DriverBase = { zoneId: string; locality: string };
+
+/** The driver a quote is priced for. Optional while there is one driver. */
+export type QuoteDriver = { id: string; base: DriverBase };
+
 export type PricingEngineConfig = {
   quoteValidityHours: number;
   roundingStepMinor: number | null;
-  /** Where the driver starts and returns to. Per-driver bases come later. */
-  base: { zoneId: string; locality: string };
+  /**
+   * Default home base (initially Tbilisi — see base.ts). A driver passed to
+   * priceQuote() overrides it, so each future driver can have their own base.
+   */
+  base: DriverBase;
   zones: readonly TravelZone[];
   travelRules: readonly TravelRule[];
   plausibility: PlausibilityLimits;
@@ -144,6 +153,7 @@ export type ManualReasonCode =
   | "tariffNotActive"
   | "fixtureTariffNotAllowed"
   | "invalidTariff"
+  | "invalidDriverBase"
   | "unknownPickupLocality"
   | "unknownDeliveryLocality"
   | "routeUnavailable"
@@ -182,6 +192,8 @@ export type CommercialQuote = {
   currency: "GEL";
   tariffId: string;
   tariffVersion: number;
+  /** Driver the quote was priced for; null = default base (single-driver setup). */
+  driverId: string | null;
   zones: { base: string; pickup: string; delivery: string };
   lines: readonly CommercialLine[];
   drivingSubtotal: Money;
