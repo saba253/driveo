@@ -23,8 +23,9 @@ src/
     pricing/      money (integer tetri), tariff/quote types, pure price calculation
     fuel/         energy-estimate model, kept separate from the service price
     routing/      RouteProvider contract, Google Routes adapter (mock-tested), settings, usage guard
-  server/         server-only entry points (routing provider; live Google calls OFF by default)
-docs/             Google Cloud setup checklist, Google data-retention/attribution notes
+    quotes/       quote orchestration: strict input validation, service, store, customer-safe responses
+  server/         server-only entry points (routing; quote service in mock/disabled mode; live Google calls OFF)
+docs/             Google Cloud setup, Google data retention/attribution, production-readiness blockers
 public/images/    licensed, optimized imagery only
 ```
 

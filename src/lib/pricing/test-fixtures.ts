@@ -46,6 +46,7 @@ export const FIXTURE_RULES: readonly TravelRule[] = [
 
 export const FIXTURE_CONFIG: PricingEngineConfig = {
   version: "fixture-config-1",
+  fixture: true,
   quoteValidityHours: 24,
   roundingStepMinor: 100,
   base: { zoneId: "alpha", locality: "Alpha" },

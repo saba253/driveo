@@ -136,6 +136,10 @@ export async function priceQuote(args: PriceQuoteArgs): Promise<QuoteOutcome> {
     return manual();
   }
 
+  if (config.fixture && (!args.allowFixtures || isProductionRuntime())) {
+    reasons.push({ code: "fixtureConfigNotAllowed", detail: config.version });
+  }
+
   // 2. Tariff
   if (!tariff) reasons.push({ code: "missingTariff" });
   else if (tariff.status !== "active") reasons.push({ code: "tariffNotActive", detail: tariff.status });
@@ -269,6 +273,7 @@ export async function priceQuote(args: PriceQuoteArgs): Promise<QuoteOutcome> {
       tariffId: tariff.id,
       tariffVersion: tariff.version,
       configVersion: config.version,
+      testData: Boolean(tariff.fixture || config.fixture),
       driverId: args.driver?.id ?? null,
       zones: { base: base.zoneId, pickup: pickupZone.zoneId, delivery: deliveryZone.zoneId },
       lines,

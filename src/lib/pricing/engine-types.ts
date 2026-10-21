@@ -100,6 +100,8 @@ export type QuoteDriver = { id: string; base: DriverBase };
 export type PricingEngineConfig = {
   /** Identity of this configuration (zones, rules, limits). Changing it invalidates quotes. */
   version: string;
+  /** Test data marker; refused outside tests exactly like fixture tariffs. */
+  fixture?: boolean;
   quoteValidityHours: number;
   roundingStepMinor: number | null;
   /**
@@ -175,6 +177,7 @@ export type ManualReasonCode =
   | "missingTariff"
   | "tariffNotActive"
   | "fixtureTariffNotAllowed"
+  | "fixtureConfigNotAllowed"
   | "invalidTariff"
   | "invalidDriverBase"
   | "vehicleNotEligible"
@@ -218,6 +221,8 @@ export type CommercialQuote = {
   tariffId: string;
   tariffVersion: number;
   configVersion: string;
+  /** True when a fixture tariff or configuration was involved; such prices are never shown to customers. */
+  testData: boolean;
   /** Driver the quote was priced for; null = default base (single-driver setup). */
   driverId: string | null;
   zones: { base: string; pickup: string; delivery: string };

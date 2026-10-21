@@ -214,7 +214,7 @@ describe("priceQuote — manual pricing instead of guessing", () => {
     assert.deepEqual(await manualCodes({ tariff: null }), ["missingTariff"]);
     assert.deepEqual(await manualCodes({ tariff: { ...FIXTURE_TARIFF, status: "draft" } }), ["tariffNotActive"]);
     assert.deepEqual(await manualCodes({ tariff: { ...FIXTURE_TARIFF, status: "retired" } }), ["tariffNotActive"]);
-    assert.deepEqual(await manualCodes({ allowFixtures: false }), ["fixtureTariffNotAllowed"]);
+    assert.deepEqual(await manualCodes({ allowFixtures: false }), ["fixtureConfigNotAllowed", "fixtureTariffNotAllowed"]);
     assert.deepEqual(await manualCodes({ tariff: { ...FIXTURE_TARIFF, perKmMinor: -1 } }), ["invalidTariff"]);
     assert.deepEqual(await manualCodes({ tariff: { ...FIXTURE_TARIFF, baseFee: money(-100) } }), ["invalidTariff"]);
   });
@@ -270,12 +270,12 @@ describe("priceQuote — vehicle eligibility", () => {
 });
 
 describe("priceQuote — fixture tariffs never reach production", () => {
-  it("refuses fixture tariffs in a production runtime even when allowFixtures is set", async () => {
+  it("refuses fixture tariffs and fixture configs in a production runtime even when allowFixtures is set", async () => {
     const env = process.env as Record<string, string | undefined>;
     const previous = env.NODE_ENV;
     env.NODE_ENV = "production";
     try {
-      assert.deepEqual(await manualCodes({ allowFixtures: true }), ["fixtureTariffNotAllowed"]);
+      assert.deepEqual(await manualCodes({ allowFixtures: true }), ["fixtureConfigNotAllowed", "fixtureTariffNotAllowed"]);
     } finally {
       env.NODE_ENV = previous;
     }
