@@ -1,0 +1,136 @@
+@import "tailwindcss";
+
+/*
+ * DRIVEO design tokens — Dark Automotive Premium.
+ * Core palette is fixed by the approved brief; derived tokens are noted
+ * with their WCAG contrast against the surfaces they sit on.
+ */
+@theme {
+  /* Reset Tailwind's default palette so only brand tokens are available. */
+  --color-*: initial;
+
+  /* Core palette (approved) */
+  --color-canvas: #101318;   /* page background */
+  --color-surface: #1c222b;  /* cards, panels */
+  --color-field: #2b323c;    /* input surfaces */
+  --color-accent: #d9f66f;   /* primary actions, highlights — 15.4:1 on canvas */
+  --color-fg: #f6f7f8;       /* primary text — 12:1+ on all surfaces */
+  --color-fg-muted: #b7bec8; /* secondary text — 6.9:1+ on all surfaces */
+
+  /* Derived */
+  --color-fg-subtle: #97a0ac;   /* placeholders, hints — 4.9:1 on field */
+  --color-accent-ink: #101318;  /* text on accent — 15.4:1 */
+  --color-accent-hover: #e4fa94;
+  --color-line: #262d37;        /* decorative dividers */
+  --color-line-strong: #717b88; /* input borders — 3:1+ on field/surface/canvas */
+  --color-danger: #ff9b8f;      /* error text — 6.3:1+ on all surfaces */
+  --color-success: #7ee2b0;     /* success text — 8.2:1+ on all surfaces */
+  --color-white: #ffffff;
+  --color-black: #000000;
+  --color-transparent: transparent;
+
+  /* Fluid type scale (mobile → desktop) */
+  /* Mobile minimums are sized so long Georgian words (e.g. ავტომობილისთვის) fit a 320px screen. */
+  --text-display: clamp(1.875rem, 1.2rem + 3.6vw, 4.5rem);
+  --text-display--line-height: 1.12;
+  --text-display--letter-spacing: -0.02em;
+  --text-h1: clamp(1.75rem, 1.3rem + 2.2vw, 3.25rem);
+  --text-h1--line-height: 1.15;
+  --text-h1--letter-spacing: -0.015em;
+  --text-h2: clamp(1.625rem, 1.3rem + 1.4vw, 2.5rem);
+  --text-h2--line-height: 1.2;
+  --text-h2--letter-spacing: -0.01em;
+  --text-h3: clamp(1.25rem, 1.1rem + 0.6vw, 1.5rem);
+  --text-h3--line-height: 1.3;
+  --text-lead: clamp(1.0625rem, 1rem + 0.35vw, 1.25rem);
+  --text-lead--line-height: 1.65;
+
+  /* Radii */
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1.125rem;
+  --radius-xl: 1.5rem;
+
+  /* Elevation — soft, deep shadows suited to a dark canvas */
+  --shadow-card: 0 1px 0 0 rgb(255 255 255 / 0.04) inset, 0 24px 48px -24px rgb(0 0 0 / 0.6);
+  --shadow-glow: 0 0 0 1px rgb(217 246 111 / 0.25), 0 12px 32px -12px rgb(217 246 111 / 0.35);
+
+  /* Motion */
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+  --duration-fast: 150ms;
+  --duration-base: 250ms;
+  --duration-slow: 450ms;
+
+  /* Layout */
+  --container-page: 76rem;
+}
+
+/* Font families reference next/font CSS variables set on <html>. */
+@theme inline {
+  /* Manrope first: it has no Georgian glyphs, so Georgian characters fall
+     through to Noto Sans Georgian while Latin text and numerals use Manrope. */
+  --font-sans: var(--font-manrope), var(--font-noto-georgian), ui-sans-serif, system-ui, sans-serif;
+  --font-brand: var(--font-manrope), ui-sans-serif, system-ui, sans-serif;
+}
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  html {
+    background-color: var(--color-canvas);
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  body {
+    min-height: 100dvh;
+    background-color: var(--color-canvas);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    /* Georgian script needs slightly more leading than Latin. */
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    text-wrap: balance;
+    /* Safety net: Georgian has no browser hyphenation, so never let a word overflow. */
+    overflow-wrap: break-word;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  ::selection {
+    background-color: var(--color-accent);
+    color: var(--color-accent-ink);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 3px;
+    border-radius: 0.25rem;
+  }
+
+  /* Note: never apply text-transform: uppercase to Georgian text — browsers
+     map it to Mtavruli capitals. Use it only on Latin labels if at all. */
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
