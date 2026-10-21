@@ -5,14 +5,18 @@
 export type PricingConfig = {
   /** How long a quote stays valid after it is computed. */
   quoteValidityHours: number;
+  /** Totals are rounded UP to a multiple of this many tetri; null disables rounding. */
+  roundingStepMinor: number | null;
 };
 
 /**
- * PROPOSED default, pending founder approval: quotes expire after 24 hours,
- * after which the price must be recalculated on the server.
+ * PROPOSED defaults, pending founder approval:
+ *  - quotes expire after 24 hours, then the price is recalculated on the server;
+ *  - totals round up to the next whole GEL (100 tetri).
  */
 export const DEFAULT_PRICING_CONFIG: PricingConfig = {
   quoteValidityHours: 24,
+  roundingStepMinor: 100,
 };
 
 /** ISO timestamp at which a quote computed at `computedAt` expires. */
@@ -26,4 +30,16 @@ export function quoteExpiry(computedAt: string, validityHours: number): string {
 export function isQuoteExpired(validUntil: string | null, now: string): boolean {
   if (validUntil === null) return false;
   return Date.parse(now) >= Date.parse(validUntil);
+}
+
+/**
+ * Rounds an amount UP to the next multiple of `stepMinor` (integer tetri).
+ * Returns the amount unchanged when rounding is disabled or already aligned.
+ */
+export function roundUpMinor(amountMinor: number, stepMinor: number | null): number {
+  if (!Number.isSafeInteger(amountMinor) || amountMinor < 0) throw new RangeError(`Invalid amount: ${amountMinor}`);
+  if (stepMinor === null) return amountMinor;
+  if (!Number.isSafeInteger(stepMinor) || stepMinor <= 0) throw new RangeError(`Invalid rounding step: ${stepMinor}`);
+  const remainder = amountMinor % stepMinor;
+  return remainder === 0 ? amountMinor : amountMinor + (stepMinor - remainder);
 }

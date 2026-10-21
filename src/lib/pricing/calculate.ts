@@ -3,6 +3,10 @@ import { addMoney, maxMoney, money, sumMoney, type Money } from "./money.ts";
 import type { QuoteLine, QuoteSnapshot, QuoteStatus, ServicePriceBreakdown, ServicePriceInput } from "./types.ts";
 
 /**
+ * Step 1.5 building blocks, kept for compatibility. New code should use
+ * priceQuote() in ./quote.ts, which adds travel zones, positioning/return legs,
+ * rounding, manual-pricing outcomes and provider-data separation.
+ *
  * Pure service-price calculation.
  *
  *   driving = max(baseFee + distanceKm × perKm, minimumFee)
@@ -85,12 +89,16 @@ type SnapshotMeta = {
   computedAt: string;
   /** Explicit expiry; otherwise derived from `config.quoteValidityHours`. */
   validUntil?: string | null;
-  config?: PricingConfig;
+  config?: Pick<PricingConfig, "quoteValidityHours">;
   /** Server-side only; ignored (forced to "estimate") for client calculations. */
   status?: Exclude<QuoteStatus, "estimate">;
 };
 
 /**
+ * @deprecated Stores the provider's route distance inside the snapshot, which may
+ * conflict with provider retention terms. Use priceQuote() (./quote.ts), which
+ * keeps provider data in a separately purgeable `providerDerived` section.
+ *
  * Freezes a calculation together with its inputs. A browser-computed snapshot
  * is always a non-authoritative "estimate", whatever status is requested.
  */

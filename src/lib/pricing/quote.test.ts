@@ -1,0 +1,370 @@
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+import { DEFAULT_PRICING_CONFIG, roundUpMinor } from "./config.ts";
+import type { PricingEngineConfig, QuoteOutcome, QuoteRequest, RouteLookup, ServiceQuote, ServiceTariff } from "./engine-types.ts";
+import { fingerprintQuoteInputs } from "./fingerprint.ts";
+import { gel, money } from "./money.ts";
+import { QuoteError, checkQuoteUsable, priceQuote, stripProviderDerived, supersedeQuote, type QuoteMeta } from "./quote.ts";
+import { FIXTURE_CONFIG, FIXTURE_TARIFF, fixtureRequest, fixtureRoute } from "./test-fixtures.ts";
+
+/* All amounts and distances here are TEST FIXTURES (see test-fixtures.ts). */
+
+const NOW = "2026-10-21T08:00:00.000Z";
+const META: QuoteMeta = { quoteId: "q1", version: 1, computedBy: "server", now: NOW };
+
+type Args = {
+  request?: QuoteRequest;
+  route?: RouteLookup;
+  tariff?: ServiceTariff | null;
+  config?: PricingEngineConfig;
+  meta?: Partial<QuoteMeta>;
+  allowFixtures?: boolean;
+};
+
+const ok = (km: number, min: number): RouteLookup => ({ ok: true, route: fixtureRoute(km, min) });
+
+function run(a: Args = {}): Promise<QuoteOutcome> {
+  return priceQuote({
+    request: a.request ?? fixtureRequest("Alpha", "Beta"),
+    route: a.route ?? ok(230, 200),
+    tariff: a.tariff === undefined ? FIXTURE_TARIFF : a.tariff,
+    config: a.config ?? FIXTURE_CONFIG,
+    meta: { ...META, ...a.meta },
+    allowFixtures: a.allowFixtures ?? true,
+  });
+}
+
+async function quoted(a: Args = {}): Promise<ServiceQuote> {
+  const outcome = await run(a);
+  assert.equal(outcome.status, "quoted", outcome.status === "manual_pricing" ? JSON.stringify(outcome.reasons) : "");
+  return (outcome as Extract<QuoteOutcome, { status: "quoted" }>).quote;
+}
+
+async function manualCodes(a: Args = {}): Promise<string[]> {
+  const outcome = await run(a);
+  assert.equal(outcome.status, "manual_pricing");
+  return (outcome as Extract<QuoteOutcome, { status: "manual_pricing" }>).reasons.map((r) => r.code);
+}
+
+const lineAmount = (q: ServiceQuote, kind: string) => q.commercial.lines.find((l) => l.kind === kind)?.amount.amountMinor;
+
+describe("priceQuote — driving, positioning and return", () => {
+  it("short trip inside the base zone: minimum applies to driving only; both travel legs are added", async () => {
+    const q = await quoted({ request: fixtureRequest("Alpha", "Alpha"), route: ok(12, 25) });
+    assert.equal(q.commercial.drivingSubtotal.amountMinor, 3000 + 1440);
+    assert.equal(q.commercial.drivingTotal.amountMinor, 8000);
+    assert.equal(lineAmount(q, "minimumAdjustment"), 3560);
+    assert.equal(lineAmount(q, "positioning"), 1000 + 300); // fare + 30 min × 6.00/h
+    assert.equal(lineAmount(q, "return"), 1300);
+    assert.equal(q.commercial.total.amountMinor, 10600);
+    assert.equal(q.commercial.roundingAdjustment.amountMinor, 0);
+  });
+
+  it("pickup at the base, delivery elsewhere: positioning inside the base zone, return from the delivery zone", async () => {
+    const q = await quoted({ request: fixtureRequest("Alpha", "Beta"), route: ok(230, 200) });
+    assert.equal(q.commercial.drivingTotal.amountMinor, 3000 + 27600);
+    assert.equal(lineAmount(q, "positioning"), 1300);
+    assert.equal(lineAmount(q, "return"), 2000 + 1800);
+    assert.equal(q.commercial.total.amountMinor, 35700);
+    assert.deepEqual(q.commercial.zones, { base: "alpha", pickup: "alpha", delivery: "beta" });
+  });
+
+  it("pickup elsewhere, delivery at the base: positioning to the pickup zone, return inside the base zone", async () => {
+    const q = await quoted({ request: fixtureRequest("ბეტა", "ალფა"), route: ok(230, 200) });
+    const sources = q.commercial.lines.filter((l) => l.kind === "positioning" || l.kind === "return").map((l) => l.source);
+    assert.deepEqual(sources, ["r-alpha-beta", "r-alpha-alpha"]);
+    assert.equal(q.commercial.total.amountMinor, 35700);
+  });
+
+  it("uses the more specific locality rule over the zone-wide rule", async () => {
+    const q = await quoted({ request: fixtureRequest("Alpha", "Beta Village"), route: ok(150, 150) });
+    const ret = q.commercial.lines.find((l) => l.kind === "return");
+    assert.equal(ret?.source, "r-betavillage-alpha");
+    assert.equal(ret?.amount.amountMinor, 3500 + 2400);
+    assert.equal(q.commercial.total.amountMinor, 21000 + 1300 + 5900);
+  });
+
+  it("adds extras after the minimum and keeps every amount in whole tetri", async () => {
+    const q = await quoted({
+      request: fixtureRequest("Alpha", "Alpha", { extras: [{ code: "waiting", label: "Waiting time", amount: gel(20) }] }),
+      route: ok(12, 25),
+    });
+    assert.equal(q.commercial.total.amountMinor, 10600 + 2000);
+    for (const l of q.commercial.lines) assert.ok(Number.isSafeInteger(l.amount.amountMinor), l.code);
+  });
+});
+
+describe("priceQuote — no double counting", () => {
+  it("never charges the driving duration: a slower route with the same distance costs the same", async () => {
+    const fast = await quoted({ route: ok(230, 200) });
+    const slow = await quoted({ route: ok(230, 320) });
+    assert.equal(slow.commercial.total.amountMinor, fast.commercial.total.amountMinor);
+  });
+
+  it("charges the driver's travel time only inside travel legs, and distance only in the distance line", async () => {
+    const q = await quoted();
+    const kinds = q.commercial.lines.map((l) => l.kind);
+    assert.equal(kinds.filter((k) => k === "distance").length, 1);
+    assert.equal(kinds.filter((k) => k === "positioning").length, 1);
+    assert.equal(kinds.filter((k) => k === "return").length, 1);
+    assert.equal(
+      q.commercial.total.amountMinor,
+      q.commercial.lines.reduce((s, l) => s + l.amount.amountMinor, 0),
+    );
+    assert.equal(q.commercial.travelTotal.amountMinor, (lineAmount(q, "positioning") ?? 0) + (lineAmount(q, "return") ?? 0));
+  });
+});
+
+describe("priceQuote — rounding", () => {
+  const roundingCase = (step: number | null) =>
+    quoted({ config: { ...FIXTURE_CONFIG, roundingStepMinor: step }, route: ok(123.45, 120) });
+
+  it("rounds the total UP to the configured step and records the adjustment", async () => {
+    // 3000 + round(123.45 × 120 = 14814) + 1300 + 3800 = 22914
+    const none = await roundingCase(null);
+    assert.equal(none.commercial.total.amountMinor, 22914);
+    assert.ok(!none.commercial.lines.some((l) => l.kind === "rounding"));
+
+    const gelStep = await roundingCase(100);
+    assert.equal(gelStep.commercial.total.amountMinor, 23000);
+    assert.equal(gelStep.commercial.roundingAdjustment.amountMinor, 86);
+    assert.equal(gelStep.commercial.lines.at(-1)?.kind, "rounding");
+
+    assert.equal((await roundingCase(50)).commercial.total.amountMinor, 22950);
+  });
+
+  it("roundUpMinor never rounds down and leaves aligned amounts alone", () => {
+    assert.equal(roundUpMinor(10600, 100), 10600);
+    assert.equal(roundUpMinor(10601, 100), 10700);
+    assert.equal(roundUpMinor(1, 500), 500);
+    assert.equal(roundUpMinor(0, 100), 0);
+    assert.equal(DEFAULT_PRICING_CONFIG.roundingStepMinor, 100);
+    assert.throws(() => roundUpMinor(100, 0), RangeError);
+    assert.throws(() => roundUpMinor(100.5, 100), RangeError);
+  });
+});
+
+describe("priceQuote — manual pricing instead of guessing", () => {
+  it("missing positioning rule → manual pricing, never a zero cost", async () => {
+    assert.deepEqual(await manualCodes({ request: fixtureRequest("Gamma", "Alpha") }), ["missingPositioningRule"]);
+  });
+
+  it("missing return rule → manual pricing", async () => {
+    assert.deepEqual(await manualCodes({ request: fixtureRequest("Alpha", "Delta") }), ["missingReturnRule"]);
+  });
+
+  it("reports every problem at once and never includes amounts", async () => {
+    const outcome = await run({ request: fixtureRequest("Gamma", "Delta"), tariff: null });
+    assert.equal(outcome.status, "manual_pricing");
+    if (outcome.status !== "manual_pricing") return;
+    assert.deepEqual(outcome.reasons.map((r) => r.code).sort(), ["missingPositioningRule", "missingReturnRule", "missingTariff"]);
+    assert.ok(!JSON.stringify(outcome).includes("amountMinor"));
+  });
+
+  it("unknown localities → manual pricing", async () => {
+    assert.deepEqual(await manualCodes({ request: fixtureRequest("Nowhere", "Elsewhere") }), [
+      "unknownPickupLocality",
+      "unknownDeliveryLocality",
+    ]);
+  });
+
+  it("route unavailable → manual pricing; nothing is substituted", async () => {
+    for (const reason of ["notFound", "unavailable", "timeout", "unresolvedAddress"] as const) {
+      assert.deepEqual(await manualCodes({ route: { ok: false, reason } }), ["routeUnavailable"]);
+    }
+  });
+
+  it("rejects non-road distances", async () => {
+    const route = { ok: true, route: { ...fixtureRoute(100, 90), method: "straightLine" } } as unknown as RouteLookup;
+    assert.deepEqual(await manualCodes({ route }), ["nonRoadDistance"]);
+  });
+
+  it("rejects implausible distances and durations", async () => {
+    for (const km of [0, -3, Number.NaN, 1200]) assert.deepEqual(await manualCodes({ route: ok(km, 120) }), ["implausibleDistance"], `km=${km}`);
+    assert.deepEqual(await manualCodes({ route: ok(230, 60) }), ["implausibleDuration"]); // 230 km/h
+    assert.deepEqual(await manualCodes({ route: ok(230, 2000) }), ["implausibleDuration"]); // ~7 km/h
+    assert.deepEqual(await manualCodes({ route: ok(230, 0) }), ["implausibleDuration"]);
+  });
+
+  it("uses straight-line distance only to catch impossible routes", async () => {
+    const at = (lng: number) => ({ lat: 0, lng });
+    const withCoords = (from: number, to: number) =>
+      fixtureRequest("Alpha", "Beta", {
+        pickup: { locality: "Alpha", address: "a", placeId: null, coordinates: at(from) },
+        delivery: { locality: "Beta", address: "b", placeId: null, coordinates: at(to) },
+      });
+    // ~100 km apart in a straight line.
+    assert.deepEqual(await manualCodes({ request: withCoords(0, 0.9), route: ok(50, 60) }), ["roadShorterThanStraightLine"]);
+    assert.deepEqual(await manualCodes({ request: withCoords(0, 0.9), route: ok(400, 400) }), ["routeTooIndirect"]);
+    const fine = await quoted({ request: withCoords(0, 0.9), route: ok(130, 120) });
+    // The price comes from the road distance, never the straight line.
+    assert.equal(lineAmount(fine, "distance"), 130 * 120);
+  });
+
+  it("refuses missing, inactive, fixture-in-production and malformed tariffs", async () => {
+    assert.deepEqual(await manualCodes({ tariff: null }), ["missingTariff"]);
+    assert.deepEqual(await manualCodes({ tariff: { ...FIXTURE_TARIFF, status: "draft" } }), ["tariffNotActive"]);
+    assert.deepEqual(await manualCodes({ tariff: { ...FIXTURE_TARIFF, status: "retired" } }), ["tariffNotActive"]);
+    assert.deepEqual(await manualCodes({ allowFixtures: false }), ["fixtureTariffNotAllowed"]);
+    assert.deepEqual(await manualCodes({ tariff: { ...FIXTURE_TARIFF, perKmMinor: -1 } }), ["invalidTariff"]);
+    assert.deepEqual(await manualCodes({ tariff: { ...FIXTURE_TARIFF, baseFee: money(-100) } }), ["invalidTariff"]);
+  });
+
+  it("refuses broken configuration", async () => {
+    const dupLocality = { ...FIXTURE_CONFIG, zones: [...FIXTURE_CONFIG.zones, { id: "eps", name: "Eps", localities: ["beta"] }] };
+    const badBase = { ...FIXTURE_CONFIG, base: { zoneId: "alpha", locality: "Beta" } };
+    const badRule = { ...FIXTURE_CONFIG, travelRules: [...FIXTURE_CONFIG.travelRules, { ...FIXTURE_CONFIG.travelRules[0], id: "x", toZoneId: "ghost" }] };
+    for (const config of [dupLocality, badBase, badRule]) assert.deepEqual(await manualCodes({ config }), ["invalidConfig"]);
+  });
+
+  it("refuses fuel or charging disguised as an extra, and malformed extras", async () => {
+    const extras = (code: string, label = "x", amount = gel(5)) => fixtureRequest("Alpha", "Beta", { extras: [{ code, label, amount }] });
+    for (const req of [extras("fuel-topup"), extras("ev_charging"), extras("misc", "საწვავი"), extras("misc", "Diesel refill"), extras("neg", "x", money(-1))]) {
+      assert.deepEqual(await manualCodes({ request: req }), ["invalidExtras"]);
+    }
+    const dup = fixtureRequest("Alpha", "Beta", {
+      extras: [
+        { code: "waiting", label: "a", amount: gel(1) },
+        { code: "waiting", label: "b", amount: gel(1) },
+      ],
+    });
+    assert.deepEqual(await manualCodes({ request: dup }), ["invalidExtras"]);
+  });
+});
+
+describe("priceQuote — admin overrides", () => {
+  it("an audited override replaces a missing rule", async () => {
+    const request = fixtureRequest("Gamma", "Alpha", {
+      overrides: { positioning: { fare: gel(30), travelMinutes: 120, reason: "village road, confirmed by phone", by: "admin" } },
+    });
+    const q = await quoted({ request, route: ok(200, 180) });
+    const pos = q.commercial.lines.find((l) => l.kind === "positioning");
+    assert.equal(pos?.source, "override");
+    assert.equal(pos?.amount.amountMinor, 3000 + 1200);
+  });
+
+  it("an override without reason or author is rejected", async () => {
+    const request = fixtureRequest("Gamma", "Alpha", { overrides: { positioning: { fare: gel(30), travelMinutes: 120, reason: " ", by: "admin" } } });
+    assert.deepEqual(await manualCodes({ request, route: ok(200, 180) }), ["invalidOverride"]);
+  });
+});
+
+describe("priceQuote — overnight eligibility", () => {
+  const overnight: PricingEngineConfig = { ...FIXTURE_CONFIG, overnight: { mode: "manualReviewAbove", maxSameDayMinutes: 600, handoverMinutes: 40 } };
+
+  it("is 'not_checked' when the policy is disabled", async () => {
+    assert.deepEqual((await quoted({ route: ok(230, 600) })).commercial.overnight, { status: "not_checked" });
+  });
+
+  it("passes within the limit, including exactly at it", async () => {
+    // 30 (positioning) + 40 (handover) + driving + 180 (return)
+    const within = await quoted({ config: overnight, route: ok(230, 200) });
+    assert.deepEqual(within.commercial.overnight, { status: "within_limit", limitMinutes: 600 });
+    assert.equal(within.providerDerived?.commitmentMinutes, 450);
+    assert.equal((await quoted({ config: overnight, route: ok(230, 350) })).commercial.overnight.status, "within_limit");
+  });
+
+  it("sends jobs above the limit to manual pricing and computes no allowance", async () => {
+    const outcome = await run({ config: overnight, route: ok(230, 351) });
+    assert.equal(outcome.status, "manual_pricing");
+    if (outcome.status === "manual_pricing") assert.deepEqual(outcome.reasons.map((r) => r.code), ["overnightRequired"]);
+  });
+
+  it("rejects an incomplete overnight policy", async () => {
+    const bad = { ...FIXTURE_CONFIG, overnight: { mode: "manualReviewAbove", maxSameDayMinutes: 0, handoverMinutes: 40 } } as PricingEngineConfig;
+    assert.deepEqual(await manualCodes({ config: bad }), ["invalidConfig"]);
+  });
+});
+
+describe("quotes — authority, validity and replacement", () => {
+  it("client calculations are never authoritative; server quotes await review", async () => {
+    const client = await quoted({ meta: { computedBy: "client", status: "agreed" } });
+    assert.equal(client.status, "estimate");
+    assert.equal(client.authoritative, false);
+    const server = await quoted();
+    assert.equal(server.status, "pending_review");
+    assert.equal(server.authoritative, true);
+    assert.ok(Object.isFrozen(server.commercial.lines[0]));
+  });
+
+  it("expires after the configured validity (24 h fixture default)", async () => {
+    const q = await quoted();
+    assert.equal(q.validUntil, "2026-10-22T08:00:00.000Z");
+    const short = await quoted({ config: { ...FIXTURE_CONFIG, quoteValidityHours: 2 } });
+    assert.equal(short.validUntil, "2026-10-21T10:00:00.000Z");
+  });
+
+  it("is usable only while valid, authoritative and for the same inputs", async () => {
+    const request = fixtureRequest("Alpha", "Beta");
+    const q = await quoted({ request });
+    const fp = await fingerprintQuoteInputs(request);
+
+    assert.deepEqual(checkQuoteUsable(q, { now: "2026-10-22T07:59:59.000Z", inputFingerprint: fp }), { usable: true });
+    assert.deepEqual(checkQuoteUsable(q, { now: "2026-10-22T08:00:00.000Z", inputFingerprint: fp }), { usable: false, reason: "expired" });
+
+    const moved = await fingerprintQuoteInputs({ ...request, delivery: { ...request.delivery, address: "Other street 9" } });
+    assert.deepEqual(checkQuoteUsable(q, { now: NOW, inputFingerprint: moved }), { usable: false, reason: "inputsChanged" });
+
+    const otherDay = await fingerprintQuoteInputs({ ...request, schedule: { date: "2026-10-26", time: "09:00" } });
+    assert.deepEqual(checkQuoteUsable(q, { now: NOW, inputFingerprint: otherDay }), { usable: false, reason: "inputsChanged" });
+
+    const client = await quoted({ request, meta: { computedBy: "client" } });
+    assert.deepEqual(checkQuoteUsable(client, { now: NOW, inputFingerprint: fp }), { usable: false, reason: "notAuthoritative" });
+  });
+
+  it("supersedes a quote with the next version and blocks the old one", async () => {
+    const first = await quoted();
+    const second = await quoted({ meta: { quoteId: "q2", version: 2, supersedes: "q1" } });
+    const old = supersedeQuote(first, second);
+    assert.equal(old.status, "superseded");
+    assert.equal(old.supersededBy, "q2");
+    assert.equal(first.supersededBy, null, "the original object is not mutated");
+    assert.deepEqual(checkQuoteUsable(old, { now: NOW, inputFingerprint: old.inputFingerprint }), { usable: false, reason: "superseded" });
+
+    assert.throws(() => supersedeQuote(old, second), QuoteError);
+    const skipped = await quoted({ meta: { quoteId: "q3", version: 3, supersedes: "q1" } });
+    assert.throws(() => supersedeQuote(first, skipped), QuoteError);
+    const otherRequest = await quoted({ request: { ...fixtureRequest("Alpha", "Beta"), requestId: "req-2" }, meta: { quoteId: "q2", version: 2, supersedes: "q1" } });
+    assert.throws(() => supersedeQuote(first, otherRequest), QuoteError);
+  });
+
+  it("rejects invalid quote metadata", async () => {
+    await assert.rejects(run({ meta: { version: 0 } }), QuoteError);
+    await assert.rejects(run({ meta: { now: "not a date" } }), QuoteError);
+  });
+});
+
+describe("provider data separation (Google Maps retention)", () => {
+  it("keeps provider distance and duration out of the commercial record", async () => {
+    const q = await quoted();
+    const commercial = JSON.stringify(q.commercial);
+    for (const key of ["distanceKm", "durationMinutes", "commitmentMinutes", "fixture-provider", "computedAt"]) {
+      assert.ok(!commercial.includes(key), key);
+    }
+    assert.equal(q.providerDerived?.retention, "provider_restricted");
+    assert.equal(q.providerDerived?.route.distanceKm, 230);
+  });
+
+  it("can strip provider data without touching the commercial record", async () => {
+    const q = await quoted();
+    const stripped = stripProviderDerived(q);
+    assert.equal(stripped.providerDerived, null);
+    assert.deepEqual(stripped.commercial, q.commercial);
+    assert.notEqual(q.providerDerived, null, "original untouched");
+  });
+});
+
+describe("fuel and EV charging never enter the service price", () => {
+  it("excludes both, has no energy lines, and total equals the sum of its lines", async () => {
+    for (const [from, to, km, min] of [
+      ["Alpha", "Alpha", 12, 25],
+      ["Alpha", "Beta", 230, 200],
+      ["Beta", "Beta Village", 40, 60],
+    ] as const) {
+      const q = await quoted({ request: fixtureRequest(from, to), route: ok(km, min) });
+      assert.deepEqual([...q.commercial.excludes], ["fuel", "charging"]);
+      assert.ok(q.commercial.lines.every((l) => !/fuel|charg|energy|petrol|diesel/i.test(l.code)));
+      assert.equal(q.commercial.total.amountMinor, q.commercial.lines.reduce((s, l) => s + l.amount.amountMinor, 0));
+    }
+  });
+});
