@@ -48,6 +48,8 @@ export type BookingCheck =
   | { ok: true; quote: ServiceQuote }
   | { ok: false; reason: "invalidInput"; issues: InputIssue[] }
   | { ok: false; reason: "unknownQuote" | "pricingNotConfigured" }
+  /** The customer has not acknowledged this quote's exact total (e.g. after a price change). */
+  | { ok: false; reason: "acknowledgementRequired"; priceChanged: boolean }
   | { ok: false; reason: Extract<UsabilityCheck, { usable: false }>["reason"] };
 
 export class QuoteServiceConfigError extends Error {}
@@ -125,6 +127,7 @@ export function createQuoteService(deps: QuoteServiceDeps) {
         quoteId: newId(),
         version: previous ? previous.version + 1 : 1,
         supersedes: previous?.quoteId ?? null,
+        previousTotal: previous?.commercial.total ?? null,
         computedBy: "server",
         now: now().toISOString(),
       },
@@ -143,10 +146,16 @@ export function createQuoteService(deps: QuoteServiceDeps) {
 
   /**
    * Re-validates a quote right before a booking request: it must exist, be
-   * authoritative, unexpired, not superseded, and match the submitted inputs
-   * AND the currently active tariff/configuration/driver.
+   * authoritative, unexpired (server clock), not superseded, match the
+   * submitted inputs AND the active tariff/configuration/driver, and the
+   * customer must have acknowledged its exact total — so any price change
+   * after a re-quote needs a fresh, explicit acknowledgement.
    */
-  async function checkQuoteForBooking(quoteId: string, raw: unknown): Promise<BookingCheck> {
+  async function checkQuoteForBooking(
+    quoteId: string,
+    raw: unknown,
+    acknowledgement: { totalMinor: number | null },
+  ): Promise<BookingCheck> {
     const parsed = parse(raw);
     if (!parsed.ok) return { ok: false, reason: "invalidInput", issues: parsed.issues };
     const quote = await deps.store.get(quoteId);
@@ -159,7 +168,11 @@ export function createQuoteService(deps: QuoteServiceDeps) {
       pricingContext(setup.tariff, setup.config, setup.driver),
     );
     const usable = checkQuoteUsable(quote, { now: now().toISOString(), inputFingerprint: fingerprint });
-    return usable.usable ? { ok: true, quote } : { ok: false, reason: usable.reason };
+    if (!usable.usable) return { ok: false, reason: usable.reason };
+    if (acknowledgement.totalMinor !== quote.commercial.total.amountMinor) {
+      return { ok: false, reason: "acknowledgementRequired", priceChanged: Boolean(quote.priceChange?.changed) };
+    }
+    return { ok: true, quote };
   }
 
   return { requestQuote, checkQuoteForBooking };

@@ -260,6 +260,11 @@ export type ServiceQuote = {
   validUntil: string;
   /** Fingerprint of the customer inputs this price was computed for. */
   inputFingerprint: string;
+  /**
+   * Set on re-quotes: the total of the quote this one replaces. When `changed`,
+   * the customer must explicitly acknowledge the new total before submitting.
+   */
+  priceChange: { previousQuoteId: string; previousTotal: Money; changed: boolean } | null;
   commercial: CommercialQuote;
   /** null once purged for retention reasons. */
   providerDerived: ProviderDerived | null;

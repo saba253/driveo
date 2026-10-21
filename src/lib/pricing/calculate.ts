@@ -1,4 +1,4 @@
-import { DEFAULT_PRICING_CONFIG, quoteExpiry, type PricingConfig } from "./config.ts";
+import { DEFAULT_PRICING_CONFIG, quoteExpiry, roundUpMinor, type PricingConfig } from "./config.ts";
 import { addMoney, maxMoney, money, sumMoney, type Money } from "./money.ts";
 import type { QuoteLine, QuoteSnapshot, QuoteStatus, ServicePriceBreakdown, ServicePriceInput } from "./types.ts";
 
@@ -10,7 +10,7 @@ import type { QuoteLine, QuoteSnapshot, QuoteStatus, ServicePriceBreakdown, Serv
  * Pure service-price calculation.
  *
  *   driving = max(baseFee + distanceKm × perKm, minimumFee)
- *   total   = driving + returnTransport + Σ additionalCharges
+ *   total   = roundUp(driving + returnTransport + Σ additionalCharges)   (whole GEL by default)
  *
  * The minimum applies to the driving service only; return transport and
  * agreed extras are pass-through costs added on top. Fuel and charging are never included.
@@ -27,7 +27,10 @@ function assertGel(m: Money, what: string) {
   if (m.amountMinor < 0) throw new PricingError(`${what} must not be negative`);
 }
 
-export function calculateServicePrice(input: ServicePriceInput): ServicePriceBreakdown {
+export function calculateServicePrice(
+  input: ServicePriceInput,
+  roundingStepMinor: number | null = DEFAULT_PRICING_CONFIG.roundingStepMinor,
+): ServicePriceBreakdown {
   const { route, tariff } = input;
 
   if (route.method !== "road") throw new PricingError("Only road distance from a routing provider can be priced");
@@ -71,13 +74,20 @@ export function calculateServicePrice(input: ServicePriceInput): ServicePriceBre
     lines.push({ kind: "additional", code: charge.code, amount: charge.amount });
   }
 
+  // Final rounding happens last, after every permitted component is included.
+  const beforeRounding = sumMoney(lines.map((l) => l.amount));
+  const rounded = roundUpMinor(beforeRounding.amountMinor, roundingStepMinor);
+  const roundingAdjustment = money(rounded - beforeRounding.amountMinor);
+  if (roundingAdjustment.amountMinor > 0) lines.push({ kind: "rounding", code: "rounding", amount: roundingAdjustment });
+
   return {
     currency: "GEL",
     lines,
     drivingSubtotal,
     drivingTotal,
     minimumApplied,
-    total: sumMoney(lines.map((l) => l.amount)),
+    roundingAdjustment,
+    total: money(rounded),
     excludes: ["fuel", "charging"],
   };
 }

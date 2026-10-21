@@ -124,6 +124,48 @@ describe("priceQuote — no double counting", () => {
   });
 });
 
+describe("priceQuote — final rounding up to whole GEL (approved)", () => {
+  // Explicit zero-cost travel rule so totals can hit exact boundaries (FIXTURE ONLY).
+  const freeLegs: PricingEngineConfig = {
+    ...FIXTURE_CONFIG,
+    travelRules: [{ ...FIXTURE_CONFIG.travelRules[0], id: "r-free", mode: "none", fare: gel(0), travelMinutes: 0 }],
+  };
+  const totalWith = async (extraMinor: number) =>
+    (
+      await quoted({
+        config: freeLegs,
+        request: fixtureRequest("Alpha", "Alpha", { extras: [{ category: "waiting", code: "waiting", label: "Waiting", amount: money(extraMinor) }] }),
+        route: ok(12, 25), // driving raised to the 80.00 fixture minimum
+      })
+    ).commercial;
+
+  it("84.00 → 84, 84.01 → 85, 184.30 → 185 (GEL)", async () => {
+    assert.equal(DEFAULT_PRICING_CONFIG.roundingStepMinor, 100);
+    const exact = await totalWith(400); // 80.00 + 4.00
+    assert.equal(exact.total.amountMinor, 8400);
+    assert.equal(exact.roundingAdjustment.amountMinor, 0);
+    const cent = await totalWith(401); // 84.01
+    assert.equal(cent.total.amountMinor, 8500);
+    assert.equal(cent.roundingAdjustment.amountMinor, 99);
+    const frac = await totalWith(10430); // 184.30
+    assert.equal(frac.total.amountMinor, 18500);
+    assert.equal(frac.roundingAdjustment.amountMinor, 70);
+  });
+
+  it("rounds only after driving, positioning, return and extras are all added", async () => {
+    const q = await quoted({
+      request: fixtureRequest("Alpha", "Beta", { extras: [{ category: "toll", code: "toll", label: "Toll", amount: money(1) }] }),
+      route: ok(230, 200),
+    });
+    const kinds = q.commercial.lines.map((l) => l.kind);
+    assert.deepEqual(kinds, ["baseFee", "distance", "positioning", "return", "additional", "rounding"]);
+    const beforeRounding = q.commercial.lines.filter((l) => l.kind !== "rounding").reduce((s, l) => s + l.amount.amountMinor, 0);
+    assert.equal(beforeRounding, 35701);
+    assert.equal(q.commercial.total.amountMinor, 35800);
+    assert.ok(!q.commercial.lines.some((l) => /fuel|charg/i.test(l.code)));
+  });
+});
+
 describe("priceQuote — rounding", () => {
   const roundingCase = (step: number | null) =>
     quoted({ config: { ...FIXTURE_CONFIG, roundingStepMinor: step }, route: ok(123.45, 120) });
@@ -344,11 +386,25 @@ describe("quotes — authority, validity and replacement", () => {
     assert.ok(Object.isFrozen(server.commercial.lines[0]));
   });
 
-  it("expires after the configured validity (24 h fixture default)", async () => {
+  it("expires 12 hours after its server-side creation timestamp (approved default)", async () => {
+    assert.equal(DEFAULT_PRICING_CONFIG.quoteValidityHours, 12);
+    assert.equal(FIXTURE_CONFIG.quoteValidityHours, 12);
     const q = await quoted();
-    assert.equal(q.validUntil, "2026-10-22T08:00:00.000Z");
+    assert.equal(q.computedAt, NOW, "created at the server's clock");
+    assert.equal(q.validUntil, "2026-10-21T20:00:00.000Z");
+
+    const fp = q.inputFingerprint;
+    const at = (iso: string) => checkQuoteUsable(q, { now: iso, inputFingerprint: fp });
+    assert.deepEqual(at("2026-10-21T19:59:00.000Z"), { usable: true }, "11 h 59 min");
+    assert.deepEqual(at("2026-10-21T20:00:00.000Z"), { usable: false, reason: "expired" }, "exactly 12 h");
+    assert.deepEqual(at("2026-10-21T20:01:00.000Z"), { usable: false, reason: "expired" }, "12 h 1 min");
+  });
+
+  it("supports a non-default validity", async () => {
     const short = await quoted({ config: { ...FIXTURE_CONFIG, quoteValidityHours: 2 } });
     assert.equal(short.validUntil, "2026-10-21T10:00:00.000Z");
+    const long = await quoted({ config: { ...FIXTURE_CONFIG, quoteValidityHours: 48 } });
+    assert.equal(long.validUntil, "2026-10-23T08:00:00.000Z");
   });
 
   it("is usable only while valid, authoritative and for the same inputs", async () => {
@@ -357,8 +413,8 @@ describe("quotes — authority, validity and replacement", () => {
     const ctx = pricingContext(FIXTURE_TARIFF, FIXTURE_CONFIG);
     const fp = await fingerprintQuoteInputs(request, ctx);
 
-    assert.deepEqual(checkQuoteUsable(q, { now: "2026-10-22T07:59:59.000Z", inputFingerprint: fp }), { usable: true });
-    assert.deepEqual(checkQuoteUsable(q, { now: "2026-10-22T08:00:00.000Z", inputFingerprint: fp }), { usable: false, reason: "expired" });
+    assert.deepEqual(checkQuoteUsable(q, { now: "2026-10-21T19:59:59.000Z", inputFingerprint: fp }), { usable: true });
+    assert.deepEqual(checkQuoteUsable(q, { now: "2026-10-21T20:00:00.000Z", inputFingerprint: fp }), { usable: false, reason: "expired" });
 
     const moved = await fingerprintQuoteInputs({ ...request, delivery: { ...request.delivery, address: "Other street 9" } }, ctx);
     assert.deepEqual(checkQuoteUsable(q, { now: NOW, inputFingerprint: moved }), { usable: false, reason: "inputsChanged" });
@@ -378,7 +434,9 @@ describe("quotes — authority, validity and replacement", () => {
 
   it("supersedes a quote with the next version and blocks the old one", async () => {
     const first = await quoted();
-    const second = await quoted({ meta: { quoteId: "q2", version: 2, supersedes: "q1" } });
+    const second = await quoted({ meta: { quoteId: "q2", version: 2, supersedes: "q1", previousTotal: first.commercial.total } });
+    assert.deepEqual(second.priceChange, { previousQuoteId: "q1", previousTotal: first.commercial.total, changed: false });
+    assert.equal(first.priceChange, null);
     const old = supersedeQuote(first, second);
     assert.equal(old.status, "superseded");
     assert.equal(old.supersededBy, "q2");
@@ -386,10 +444,21 @@ describe("quotes — authority, validity and replacement", () => {
     assert.deepEqual(checkQuoteUsable(old, { now: NOW, inputFingerprint: old.inputFingerprint }), { usable: false, reason: "superseded" });
 
     assert.throws(() => supersedeQuote(old, second), QuoteError);
-    const skipped = await quoted({ meta: { quoteId: "q3", version: 3, supersedes: "q1" } });
+    const skipped = await quoted({ meta: { quoteId: "q3", version: 3, supersedes: "q1", previousTotal: first.commercial.total } });
     assert.throws(() => supersedeQuote(first, skipped), QuoteError);
-    const otherRequest = await quoted({ request: { ...fixtureRequest("Alpha", "Beta"), requestId: "req-2" }, meta: { quoteId: "q2", version: 2, supersedes: "q1" } });
+    const otherRequest = await quoted({
+      request: { ...fixtureRequest("Alpha", "Beta"), requestId: "req-2" },
+      meta: { quoteId: "q2", version: 2, supersedes: "q1", previousTotal: first.commercial.total },
+    });
     assert.throws(() => supersedeQuote(first, otherRequest), QuoteError);
+  });
+
+  it("flags a changed price on re-quote, and requires the previous total", async () => {
+    const first = await quoted({ route: ok(230, 200) });
+    const cheaper = await quoted({ route: ok(200, 180), meta: { quoteId: "q2", version: 2, supersedes: "q1", previousTotal: first.commercial.total } });
+    assert.equal(cheaper.priceChange?.changed, true);
+    assert.notEqual(cheaper.commercial.total.amountMinor, first.commercial.total.amountMinor);
+    await assert.rejects(run({ meta: { quoteId: "q2", version: 2, supersedes: "q1" } }), QuoteError);
   });
 
   it("rejects invalid quote metadata", async () => {

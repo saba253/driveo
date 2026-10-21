@@ -74,8 +74,8 @@ service yet. **Every item below blocks production use of automatic prices.**
 - Zones and travel rules with real fares/minutes to and from the Tbilisi base.
 - Overnight policy: a configured same-day limit or an explicit, attributed
   waiver (unconfigured blocks automatic pricing).
-- Plausibility limits, rounding step (1 GEL proposed), quote validity (24 h
-  proposed), extras catalogue.
+- Plausibility limits and extras catalogue. Approved: quote validity 12 h,
+  final price rounded up to the next whole GEL.
 - An admin workflow to edit them, with versioning (a change invalidates
   outstanding quotes via fingerprints).
 

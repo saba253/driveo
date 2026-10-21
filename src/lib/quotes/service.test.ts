@@ -71,6 +71,9 @@ function harness(opts: { setup?: Partial<PricingSetup>; limit?: number; allowTes
   };
 }
 
+/** The customer's acknowledgement of the exact total they were shown. */
+const ack = (q: { commercial: { total: { amountMinor: number } } }) => ({ totalMinor: q.commercial.total.amountMinor });
+
 const quoted = (r: QuoteServiceResult) => {
   assert.equal(r.status, "quoted", r.status === "manual_pricing" ? JSON.stringify(r.reasons) : r.status === "invalid_input" ? JSON.stringify(r.issues) : "");
   return (r as Extract<QuoteServiceResult, { status: "quoted" }>).quote;
@@ -148,8 +151,19 @@ describe("quote orchestration — invalidation before booking", () => {
     const h = harness();
     const raw = input(PLACES.tbilisi, PLACES.beta);
     const q = quoted(await h.request(raw));
-    const check = await h.service.checkQuoteForBooking(q.quoteId, raw);
+    const check = await h.service.checkQuoteForBooking(q.quoteId, raw, ack(q));
     assert.equal(check.ok, true);
+  });
+
+  it("uses only server-created timestamps; clients cannot supply them", async () => {
+    const h = harness();
+    const raw = input(PLACES.tbilisi, PLACES.beta);
+    const q = quoted(await h.request(raw));
+    assert.equal(q.computedAt, T0.toISOString());
+    assert.equal(q.validUntil, "2026-10-21T20:00:00.000Z");
+    for (const key of ["computedAt", "validUntil", "now"]) {
+      assert.deepEqual(issues(await h.request({ ...raw, [key]: "2099-01-01T00:00:00Z" })), [`${key}:unknownField`]);
+    }
   });
 
   it("is invalidated by every relevant change", async () => {
@@ -165,7 +179,7 @@ describe("quote orchestration — invalidation before booking", () => {
     for (const [what, changedInput] of changed) {
       const h = harness();
       const q = quoted(await h.request(raw));
-      const check = await h.service.checkQuoteForBooking(q.quoteId, changedInput);
+      const check = await h.service.checkQuoteForBooking(q.quoteId, changedInput, ack(q));
       assert.deepEqual(check, { ok: false, reason: "inputsChanged" }, what);
     }
   });
@@ -181,18 +195,76 @@ describe("quote orchestration — invalidation before booking", () => {
       const h = harness();
       const q = quoted(await h.request(raw));
       mutate(h.setup);
-      assert.deepEqual(await h.service.checkQuoteForBooking(q.quoteId, raw), { ok: false, reason: "inputsChanged" }, what);
+      assert.deepEqual(await h.service.checkQuoteForBooking(q.quoteId, raw, ack(q)), { ok: false, reason: "inputsChanged" }, what);
     }
   });
 
-  it("expires after the configured validity (24 h fixture)", async () => {
+  it("is valid at 11 h 59 min and expired at exactly 12 h and at 12 h 1 min (server clock)", async () => {
     const h = harness();
     const raw = input(PLACES.tbilisi, PLACES.beta);
     const q = quoted(await h.request(raw));
-    h.advance(24 * 3_600_000 - 1);
-    assert.equal((await h.service.checkQuoteForBooking(q.quoteId, raw)).ok, true);
-    h.advance(1);
-    assert.deepEqual(await h.service.checkQuoteForBooking(q.quoteId, raw), { ok: false, reason: "expired" });
+    const MIN = 60_000;
+    h.advance(11 * 60 * MIN + 59 * MIN);
+    assert.equal((await h.service.checkQuoteForBooking(q.quoteId, raw, ack(q))).ok, true, "11:59");
+    h.advance(MIN);
+    assert.deepEqual(await h.service.checkQuoteForBooking(q.quoteId, raw, ack(q)), { ok: false, reason: "expired" }, "12:00");
+    h.advance(MIN);
+    assert.deepEqual(await h.service.checkQuoteForBooking(q.quoteId, raw, ack(q)), { ok: false, reason: "expired" }, "12:01");
+  });
+
+  it("an expired quote is rejected and a re-quote creates a new, usable version", async () => {
+    const h = harness();
+    const raw = input(PLACES.tbilisi, PLACES.beta);
+    const first = quoted(await h.request(raw));
+    h.advance(12 * 3_600_000);
+    assert.deepEqual(await h.service.checkQuoteForBooking(first.quoteId, raw, ack(first)), { ok: false, reason: "expired" });
+    const second = quoted(await h.request({ ...raw, previousQuoteId: first.quoteId }));
+    assert.equal(second.version, 2);
+    assert.equal(second.validUntil, new Date(Date.parse(second.computedAt) + 12 * 3_600_000).toISOString());
+    assert.equal((await h.service.checkQuoteForBooking(second.quoteId, raw, ack(second))).ok, true);
+  });
+
+  it("supports a non-default validity from the configuration", async () => {
+    const config: PricingEngineConfig = { ...FIXTURE_TBILISI_CONFIG, quoteValidityHours: 3 };
+    const h = harness({ setup: { config } });
+    const raw = input(PLACES.tbilisi, PLACES.beta);
+    const q = quoted(await h.request(raw));
+    assert.equal(q.validUntil, "2026-10-21T11:00:00.000Z");
+    h.advance(3 * 3_600_000);
+    assert.deepEqual(await h.service.checkQuoteForBooking(q.quoteId, raw, ack(q)), { ok: false, reason: "expired" });
+  });
+
+  it("requires the customer to acknowledge the exact total, and again after a price change", async () => {
+    const h = harness();
+    const raw = input(PLACES.tbilisi, PLACES.beta);
+    const first = quoted(await h.request(raw));
+    assert.deepEqual(await h.service.checkQuoteForBooking(first.quoteId, raw, { totalMinor: null }), {
+      ok: false,
+      reason: "acknowledgementRequired",
+      priceChanged: false,
+    });
+    assert.deepEqual(await h.service.checkQuoteForBooking(first.quoteId, raw, { totalMinor: first.commercial.total.amountMinor + 100 }), {
+      ok: false,
+      reason: "acknowledgementRequired",
+      priceChanged: false,
+    });
+
+    // The tariff changes (fixture only) and the customer re-quotes: the price changes.
+    h.setup.tariff = { ...(h.setup.tariff as ServiceTariff), version: 2, perKmMinor: 130 };
+    const second = quoted(await h.request({ ...raw, previousQuoteId: first.quoteId }));
+    assert.equal(second.priceChange?.changed, true);
+    assert.deepEqual(second.priceChange?.previousTotal, first.commercial.total);
+    assert.equal(toPublicQuoteResponse({ status: "quoted", quote: second }, { publishPrices: false }).status, "price_pending");
+    const pub = toPublicQuoteResponse({ status: "quoted", quote: second }, { publishPrices: false });
+    assert.equal(pub.status === "price_pending" && pub.priceChanged, true);
+
+    // Acknowledging the OLD total is not enough.
+    assert.deepEqual(await h.service.checkQuoteForBooking(second.quoteId, raw, ack(first)), {
+      ok: false,
+      reason: "acknowledgementRequired",
+      priceChanged: true,
+    });
+    assert.equal((await h.service.checkQuoteForBooking(second.quoteId, raw, ack(second))).ok, true);
   });
 
   it("a re-quote supersedes the previous version", async () => {
@@ -203,16 +275,17 @@ describe("quote orchestration — invalidation before booking", () => {
     assert.equal(second.version, 2);
     assert.equal(second.requestId, first.requestId);
     assert.equal(second.supersedes, first.quoteId);
-    assert.deepEqual(await h.service.checkQuoteForBooking(first.quoteId, raw), { ok: false, reason: "superseded" });
-    assert.equal((await h.service.checkQuoteForBooking(second.quoteId, raw)).ok, true);
+    assert.deepEqual(await h.service.checkQuoteForBooking(first.quoteId, raw, ack(first)), { ok: false, reason: "superseded" });
+    assert.equal((await h.service.checkQuoteForBooking(second.quoteId, raw, ack(second))).ok, true);
+    assert.equal(second.priceChange?.changed, false);
     // A superseded quote cannot be re-quoted again.
     assert.deepEqual(issues(await h.request({ ...raw, previousQuoteId: first.quoteId })), ["previousQuoteId:invalid"]);
   });
 
   it("unknown quotes and invalid inputs are refused", async () => {
     const h = harness();
-    assert.deepEqual(await h.service.checkQuoteForBooking("nope", input(PLACES.tbilisi, PLACES.beta)), { ok: false, reason: "unknownQuote" });
-    const check = await h.service.checkQuoteForBooking("nope", { pickup: {} });
+    assert.deepEqual(await h.service.checkQuoteForBooking("nope", input(PLACES.tbilisi, PLACES.beta), { totalMinor: 1 }), { ok: false, reason: "unknownQuote" });
+    const check = await h.service.checkQuoteForBooking("nope", { pickup: {} }, { totalMinor: 1 });
     assert.equal(!check.ok && check.reason, "invalidInput");
   });
 });
@@ -270,7 +343,8 @@ describe("quote orchestration — fuel/charging, restricted data and publishing"
     const pub = toPublicQuoteResponse(r, { publishPrices: true });
     assert.equal(pub.status, "price_available");
     if (pub.status === "price_available") {
-      assert.deepEqual(Object.keys(pub).sort(), ["excludes", "quoteId", "status", "total", "validUntil"]);
+      assert.deepEqual(Object.keys(pub).sort(), ["excludes", "priceChanged", "quoteId", "status", "total", "validUntil"]);
+      assert.equal(pub.total.amountMinor % 100, 0, "published totals are whole GEL");
       assert.deepEqual([...pub.excludes], ["fuel", "charging"]);
     }
   });

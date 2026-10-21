@@ -51,7 +51,7 @@ export type ServicePriceInput = {
   additionalCharges?: readonly AdditionalCharge[];
 };
 
-export type QuoteLineKind = "baseFee" | "distance" | "minimumAdjustment" | "returnTransport" | "additional";
+export type QuoteLineKind = "baseFee" | "distance" | "minimumAdjustment" | "returnTransport" | "additional" | "rounding";
 
 export type QuoteLine = {
   kind: QuoteLineKind;
@@ -70,6 +70,8 @@ export type ServicePriceBreakdown = {
   /** Base + distance after the minimum. */
   drivingTotal: Money;
   minimumApplied: boolean;
+  /** Added to round the final price up to the configured step (whole GEL by default). */
+  roundingAdjustment: Money;
   total: Money;
   /** Costs never included in this total. */
   excludes: readonly ["fuel", "charging"];

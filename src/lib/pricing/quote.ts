@@ -37,6 +37,8 @@ export type QuoteMeta = {
   version: number;
   /** quoteId of the quote this one replaces, for re-quotes of the same request. */
   supersedes?: string | null;
+  /** Total of the replaced quote; required with `supersedes` so price changes are detected. */
+  previousTotal?: Money | null;
   computedBy: "client" | "server";
   now: string;
   /** Server-side status for authoritative quotes; client quotes are always "estimate". */
@@ -117,6 +119,7 @@ export async function priceQuote(args: PriceQuoteArgs): Promise<QuoteOutcome> {
   const { request, route, tariff, config, meta } = args;
   if (!Number.isInteger(meta.version) || meta.version < 1) throw new QuoteError("Quote version must be a positive integer");
   if (Number.isNaN(Date.parse(meta.now))) throw new QuoteError(`Invalid now: ${meta.now}`);
+  if (meta.supersedes && !meta.previousTotal) throw new QuoteError("A re-quote must carry the previous total");
 
   const baseDef = args.driver?.base ?? config.base;
   const inputFingerprint = await fingerprintQuoteInputs(request, pricingContext(tariff, config, args.driver));
@@ -268,6 +271,10 @@ export async function priceQuote(args: PriceQuoteArgs): Promise<QuoteOutcome> {
     computedAt: meta.now,
     validUntil: quoteExpiry(meta.now, config.quoteValidityHours),
     inputFingerprint,
+    priceChange:
+      meta.supersedes && meta.previousTotal
+        ? { previousQuoteId: meta.supersedes, previousTotal: meta.previousTotal, changed: meta.previousTotal.amountMinor !== rounded }
+        : null,
     commercial: {
       currency: "GEL",
       tariffId: tariff.id,

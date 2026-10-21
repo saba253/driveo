@@ -10,12 +10,15 @@ export type PricingConfig = {
 };
 
 /**
- * PROPOSED defaults, pending founder approval:
- *  - quotes expire after 24 hours, then the price is recalculated on the server;
- *  - totals round up to the next whole GEL (100 tetri).
+ * Founder-approved defaults:
+ *  - a quote is valid for 12 hours from its server-side creation time, then the
+ *    price must be recalculated on the server (expired at exactly 12:00:00);
+ *  - the final service price is rounded UP to the next whole GEL (100 tetri),
+ *    after driving, positioning, return and permitted extras are added.
+ * Both remain configurable per pricing configuration.
  */
 export const DEFAULT_PRICING_CONFIG: PricingConfig = {
-  quoteValidityHours: 24,
+  quoteValidityHours: 12,
   roundingStepMinor: 100,
 };
 
@@ -27,6 +30,7 @@ export function quoteExpiry(computedAt: string, validityHours: number): string {
   return new Date(start + validityHours * 3_600_000).toISOString();
 }
 
+/** Expired when `now` is at or after `validUntil` (exactly at the boundary counts as expired). */
 export function isQuoteExpired(validUntil: string | null, now: string): boolean {
   if (validUntil === null) return false;
   return Date.parse(now) >= Date.parse(validUntil);

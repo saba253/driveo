@@ -21,9 +21,11 @@ export type PublicQuoteResponse =
       validUntil: string;
       total: { amountMinor: number; currency: "GEL" };
       excludes: readonly ["fuel", "charging"];
+      /** True when this re-quote's total differs from the previous one; the customer must acknowledge it. */
+      priceChanged: boolean;
     }
   /** A price was computed but may not be shown (publishing off, or test data). */
-  | { status: "price_pending"; quoteId: string; validUntil: string }
+  | { status: "price_pending"; quoteId: string; validUntil: string; priceChanged: boolean }
   | { status: "manual_pricing"; categories: ManualCategory[] }
   | { status: "invalid_input"; issues: InputIssue[] }
   | { status: "rate_limited"; retryAfterSeconds: number };
@@ -66,13 +68,15 @@ export function toPublicQuoteResponse(result: QuoteServiceResult, opts: { publis
     case "quoted": {
       const q = result.quote;
       const publishable = opts.publishPrices && q.authoritative && !q.commercial.testData;
-      if (!publishable) return { status: "price_pending", quoteId: q.quoteId, validUntil: q.validUntil };
+      const priceChanged = Boolean(q.priceChange?.changed);
+      if (!publishable) return { status: "price_pending", quoteId: q.quoteId, validUntil: q.validUntil, priceChanged };
       return {
         status: "price_available",
         quoteId: q.quoteId,
         validUntil: q.validUntil,
         total: { amountMinor: q.commercial.total.amountMinor, currency: "GEL" },
         excludes: ["fuel", "charging"],
+        priceChanged,
       };
     }
   }

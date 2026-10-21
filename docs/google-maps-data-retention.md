@@ -26,7 +26,7 @@ Sources:
 1. **Retention of Routes distance/duration** — may they be kept inside a quote record, and for how long? Ask Google (support/sales) or counsel. Until answered, treat them as restricted.
 2. **Is a price derived from Google distance "Google content"?** Our position in code: the price is DRIVEO's commercial output; the distance it was computed from is provider content. Needs confirmation.
 3. **Attribution placement** — when the price card shows a quote based on Google routing (no map), where does the "Google Maps" attribution appear? Proposed: small attribution under the price card and the address search field.
-4. **Purge window** for provider data — proposed: at quote expiry (24 h default) or within 30 days, whichever is earlier.
+4. **Purge window** for provider data — proposed: at quote expiry (12 h default) or within 30 days, whichever is earlier.
 5. **Terms of Use and Privacy Policy** — must exist and reference Google's terms before any Google-backed feature is public.
 
 ## How the code is prepared

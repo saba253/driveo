@@ -9,6 +9,7 @@
  */
 import type { PricingEngineConfig, ProviderRoute, QuoteRequest, ServiceTariff, TravelRule } from "./engine-types.ts";
 import { HOME_BASE_ZONE, INITIAL_HOME_BASE } from "./base.ts";
+import { DEFAULT_PRICING_CONFIG } from "./config.ts";
 import { gel } from "./money.ts";
 
 export const FIXTURE_TARIFF: ServiceTariff = {
@@ -47,8 +48,9 @@ export const FIXTURE_RULES: readonly TravelRule[] = [
 export const FIXTURE_CONFIG: PricingEngineConfig = {
   version: "fixture-config-1",
   fixture: true,
-  quoteValidityHours: 24,
-  roundingStepMinor: 100,
+  // Follow the approved defaults (12 h validity, round up to whole GEL).
+  quoteValidityHours: DEFAULT_PRICING_CONFIG.quoteValidityHours,
+  roundingStepMinor: DEFAULT_PRICING_CONFIG.roundingStepMinor,
   base: { zoneId: "alpha", locality: "Alpha" },
   zones: [
     { id: "alpha", name: "Alpha (fixture base)", localities: ["Alpha", "ალფა"] },
