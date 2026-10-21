@@ -18,16 +18,23 @@ src/
     layout/       header, footer
     booking/      booking prototype UI
     sections/     homepage sections
-  lib/            utilities and domain types (booking.ts is UI-independent)
+  lib/            framework-free domain logic (relative `.ts` imports, runs in Node tests)
+    booking/      types, validation, phone parsing, versioned policies
+    pricing/      money (integer tetri), tariff/quote types, pure price calculation
+    fuel/         energy-estimate model, kept separate from the service price
+    routing/      RouteProvider interface for a future road-distance service
 public/images/    licensed, optimized imagery only
 ```
 
 ## Status
-Prototype. No backend, booking submission, payments or authentication yet.
+Prototype. The booking form validates and previews locally only — nothing is sent or stored.
+No backend, payments or authentication yet. No live prices are shown; pricing functions are
+exercised only by tests with labelled fixture values.
 
 ## Scripts
 ```bash
 npm run dev     # http://localhost:3000
 npm run lint
 npm run build
+npm test        # Node built-in test runner, src/**/*.test.ts
 ```

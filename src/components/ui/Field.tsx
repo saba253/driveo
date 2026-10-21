@@ -38,12 +38,136 @@ export function Select({ className, children, ...props }: ComponentPropsWithoutR
   );
 }
 
-/** Label + control wrapper. */
-export function Field({ label, htmlFor, className, children }: { label: string; htmlFor: string; className?: string; children: ReactNode }) {
+/** ids for a control's hint and error text, and the matching aria-describedby value. */
+export function describe(id: string, opts: { hint?: boolean; error?: boolean }) {
+  const ids = [opts.error && `${id}-error`, opts.hint && `${id}-hint`].filter(Boolean).join(" ");
+  return ids || undefined;
+}
+
+export function FieldHint({ id, children }: { id: string; children: ReactNode }) {
+  return (
+    <p id={`${id}-hint`} className="mt-1.5 text-xs leading-relaxed text-fg-subtle">
+      {children}
+    </p>
+  );
+}
+
+export function FieldError({ id, children }: { id: string; children?: ReactNode }) {
+  if (!children) return null;
+  return (
+    <p id={`${id}-error`} className="mt-1.5 flex gap-1.5 text-sm leading-snug text-danger">
+      <Icon name="alert" size={16} className="mt-0.5 shrink-0" />
+      <span>{children}</span>
+    </p>
+  );
+}
+
+type FieldProps = {
+  label: string;
+  htmlFor: string;
+  hint?: ReactNode;
+  error?: string;
+  className?: string;
+  children: ReactNode;
+};
+
+/** Label + control + optional hint and error. The control must set aria-describedby via describe(). */
+export function Field({ label, htmlFor, hint, error, className, children }: FieldProps) {
   return (
     <div className={cn("min-w-0", className)}>
       <Label htmlFor={htmlFor}>{label}</Label>
       {children}
+      <FieldError id={htmlFor}>{error}</FieldError>
+      {hint && <FieldHint id={htmlFor}>{hint}</FieldHint>}
     </div>
+  );
+}
+
+type CheckboxProps = Omit<ComponentPropsWithoutRef<"input">, "type" | "children"> & {
+  id: string;
+  label: ReactNode;
+  hint?: ReactNode;
+  error?: string;
+};
+
+/** Native checkbox with a large hit area: the whole row is the label. */
+export function Checkbox({ id, label, hint, error, className, ...props }: CheckboxProps) {
+  return (
+    <div className={cn("min-w-0", className)}>
+      <label htmlFor={id} className="flex cursor-pointer items-start gap-3 py-1">
+        <span className="relative mt-0.5 grid size-5.5 shrink-0 place-items-center">
+          <input
+            id={id}
+            type="checkbox"
+            aria-invalid={error ? true : undefined}
+            aria-describedby={describe(id, { hint: Boolean(hint), error: Boolean(error) })}
+            className={cn(
+              "peer size-5.5 cursor-pointer appearance-none rounded-sm border border-line-strong bg-field",
+              "transition-[background-color,border-color,box-shadow] duration-(--duration-fast)",
+              "checked:border-accent checked:bg-accent hover:border-fg-subtle",
+              "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
+              "aria-invalid:border-danger",
+            )}
+            {...props}
+          />
+          <Icon
+            name="check"
+            size={16}
+            strokeWidth={2.5}
+            className="pointer-events-none absolute text-accent-ink opacity-0 transition-opacity duration-(--duration-fast) peer-checked:opacity-100"
+          />
+        </span>
+        <span className="text-[0.9375rem] leading-snug text-fg">{label}</span>
+      </label>
+      <div className="pl-8.5">
+        <FieldError id={id}>{error}</FieldError>
+        {hint && <FieldHint id={id}>{hint}</FieldHint>}
+      </div>
+    </div>
+  );
+}
+
+type SegmentedProps<V extends string> = {
+  name: string;
+  legend: string;
+  options: readonly { value: V; label: string }[];
+  value: V | "";
+  onChange: (value: V) => void;
+  error?: string;
+  className?: string;
+};
+
+/** Radio group styled as segmented buttons; arrow keys move between options natively. */
+export function Segmented<V extends string>({ name, legend, options, value, onChange, error, className }: SegmentedProps<V>) {
+  const id = `${name}-group`;
+  return (
+    <fieldset className={cn("min-w-0", className)} aria-describedby={error ? `${id}-error` : undefined}>
+      <legend className="mb-2 text-sm font-medium text-fg-muted">{legend}</legend>
+      <div className="grid grid-cols-2 gap-2">
+        {options.map((o) => (
+          <label
+            key={o.value}
+            className={cn(
+              "relative flex h-13 cursor-pointer items-center justify-center rounded-md border bg-field px-3 text-center text-[0.9375rem]",
+              "transition-[border-color,background-color,color] duration-(--duration-fast)",
+              "has-checked:border-accent has-checked:bg-accent/10 has-checked:text-fg",
+              "has-focus-visible:ring-3 has-focus-visible:ring-accent/40",
+              error ? "border-danger text-fg-muted" : "border-line-strong text-fg-muted hover:border-fg-subtle",
+            )}
+          >
+            <input
+              type="radio"
+              name={name}
+              value={o.value}
+              checked={value === o.value}
+              onChange={() => onChange(o.value)}
+              className="sr-only"
+            />
+            {o.label}
+          </label>
+        ))}
+      </div>
+      <FieldError id={id}>{error}</FieldError>
+    </fieldset>
   );
 }

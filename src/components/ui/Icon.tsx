@@ -9,6 +9,15 @@ const paths = {
   close: <path d="M6 6l12 12M18 6L6 18" />,
   arrowUp: <path d="M12 19V5M6 11l6-6 6 6" />,
   plus: <path d="M12 5v14M5 12h14" />,
+  check: <path d="M5 12.5l4.5 4.5L19 7.5" />,
+  arrowLeft: <path d="M19 12H5M11 6l-6 6 6 6" />,
+  pencil: <path d="M14.5 5.5l4 4M4 20l1-5L15.5 4.5a2.1 2.1 0 013 0l1 1a2.1 2.1 0 010 3L9 19l-5 1z" />,
+  alert: (
+    <>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 7.5v5.5M12 16.5h.01" />
+    </>
+  ),
   info: (
     <>
       <circle cx="12" cy="12" r="8.5" />

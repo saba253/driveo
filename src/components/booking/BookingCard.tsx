@@ -1,26 +1,89 @@
+"use client";
+
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { Field, Input, Select } from "@/components/ui/Field";
 import { Icon } from "@/components/ui/Icon";
 import { ka } from "@/content/ka";
+import { STAGE_FIELDS, type FormStage, type ValidationErrors } from "@/lib/booking/validation";
 import { cn } from "@/lib/cn";
-import type { BookingField } from "@/lib/booking";
+import { DetailsStage } from "./DetailsStage";
+import { PrototypeNotice, ReviewStage } from "./ReviewStage";
+import { RouteStage } from "./RouteStage";
+import { fieldId, useBookingForm, type Stage } from "./useBookingForm";
 
 /**
- * Booking card — visual shell only (Step 1.3).
- * Not a <form> yet, so nothing can be submitted; validation, the past-date
- * guard and the local confirmation preview arrive in the next step.
+ * Booking card — functional client-side prototype (Step 1.5).
+ * Route & time → vehicle & contact → review → prototype confirmation.
+ * No request is sent or stored anywhere.
  */
 const t = ka.booking;
-const id = (field: BookingField) => `booking-${field}`;
+const STEP_NUMBER: Record<Exclude<Stage, "done">, number> = { route: 1, details: 2, review: 3 };
+const TOTAL_STEPS = 3;
+
+/** Moves focus to the first invalid control of a stage, in display order. */
+function focusFirstInvalid(stage: FormStage, errors: ValidationErrors) {
+  const field = STAGE_FIELDS[stage].find((f) => errors[f]);
+  if (!field) return;
+  const el = document.getElementById(fieldId(field));
+  const target = el?.matches("input, select, textarea") ? el : el?.querySelector<HTMLElement>("input, select, textarea");
+  target?.focus();
+}
 
 export function BookingCard({ className }: { className?: string }) {
+  const form = useBookingForm();
+  const { stage, editingFromReview } = form;
+  const cardRef = useRef<HTMLElement>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const moved = useRef(false);
+  const [announcement, setAnnouncement] = useState("");
+
+  // After a stage change made by the customer, bring the card into view and focus its heading.
+  useEffect(() => {
+    if (!moved.current) return;
+    moved.current = false;
+    const card = cardRef.current;
+    if (card && card.getBoundingClientRect().top < 0) {
+      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      card.scrollIntoView({ block: "start", behavior: reduce ? "auto" : "smooth" });
+    }
+    headingRef.current?.focus({ preventScroll: true });
+  }, [stage]);
+
+  const go = (fn: () => void) => {
+    moved.current = true;
+    setAnnouncement("");
+    fn();
+  };
+
+  const onSubmitStage = (s: FormStage) => (e: FormEvent) => {
+    e.preventDefault();
+    const errors = form.submitStage(s);
+    if (errors) {
+      setAnnouncement(t.errors.summary(Object.keys(errors).length));
+      focusFirstInvalid(s, errors);
+    } else {
+      moved.current = true;
+      setAnnouncement("");
+    }
+  };
+
+  const onConfirm = () => {
+    const errors = form.confirm();
+    moved.current = true;
+    setAnnouncement(errors ? t.errors.summary(Object.keys(errors).length) : "");
+  };
+
+  const stepNumber = stage === "done" ? null : STEP_NUMBER[stage];
+  const primaryLabel = editingFromReview ? t.backToReview : stage === "route" ? t.next : t.toReview;
+
   return (
     <section
+      ref={cardRef}
       id="booking"
       aria-labelledby="booking-title"
       className={cn(
-        "relative rounded-xl border border-line bg-surface/85 p-5 shadow-card backdrop-blur-xl sm:p-7",
+        "relative scroll-mt-24 rounded-xl border border-line bg-surface/85 p-5 shadow-card backdrop-blur-xl sm:p-7",
         className,
       )}
     >
@@ -33,82 +96,78 @@ export function BookingCard({ className }: { className?: string }) {
         </h2>
         <Badge className="mt-1 shrink-0">{ka.prototype.badge}</Badge>
       </div>
-      <p className="mt-1.5 text-sm text-fg-muted">{t.subtitle}</p>
 
-      {/* Route: from → to, joined by a rail */}
-      <div className="mt-6 grid grid-cols-[0.875rem_minmax(0,1fr)] gap-x-3.5">
-        <div className="flex flex-col items-center pt-[0.4rem]" aria-hidden="true">
-          <span className="size-3.5 shrink-0 rounded-full border-2 border-fg-muted" />
-          <span className="my-1.5 w-px flex-1 bg-linear-to-b from-fg-muted/60 to-accent/70" />
-        </div>
-        <RouteFieldset legend={t.from} city="pickupCity" address="pickupAddress" section="pickup" className="pb-5" />
-
-        <div className="pt-[0.4rem]" aria-hidden="true">
-          <span className="block size-3.5 rounded-full bg-accent shadow-[0_0_12px_rgb(217_246_111/0.6)]" />
-        </div>
-        <RouteFieldset legend={t.to} city="deliveryCity" address="deliveryAddress" section="delivery" />
-      </div>
-
-      <fieldset className="mt-5 min-w-0 border-t border-line pt-5">
-        <legend className="sr-only">{t.when}</legend>
-        <div className="grid gap-4 min-[420px]:grid-cols-2">
-          <Field label={t.date} htmlFor={id("pickupDate")}>
-            <Input id={id("pickupDate")} name="pickupDate" type="date" required />
-          </Field>
-          <Field label={t.time} htmlFor={id("pickupTime")}>
-            <Input id={id("pickupTime")} name="pickupTime" type="time" step={900} required />
-          </Field>
-        </div>
-      </fieldset>
-
-      <Button size="lg" className="mt-6 w-full" aria-describedby="booking-note">
-        {t.submit}
-        <Icon name="arrowRight" size={18} className="transition-transform duration-(--duration-base) group-hover/button:translate-x-0.5" />
-      </Button>
-      <p id="booking-note" className="mt-3 text-center text-xs leading-relaxed text-fg-subtle">
-        {t.prototypeNote}
-      </p>
-    </section>
-  );
-}
-
-type RouteFieldsetProps = {
-  legend: string;
-  city: BookingField;
-  address: BookingField;
-  /** Autofill section, so browsers keep pickup and delivery addresses apart. */
-  section: string;
-  className?: string;
-};
-
-function RouteFieldset({ legend, city, address, section, className }: RouteFieldsetProps) {
-  return (
-    <fieldset className={cn("min-w-0", className)}>
-      <legend className="mb-3 text-[0.9375rem] font-semibold text-fg">{legend}</legend>
-      <div className="grid gap-3 sm:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
-        <Field label={t.city} htmlFor={id(city)}>
-          <Select id={id(city)} name={city} defaultValue="" required>
-            <option value="" disabled>
-              {t.cityPlaceholder}
-            </option>
-            {t.cities.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
+      {/* Progress */}
+      <div className="mt-4">
+        {stepNumber && (
+          <div className="mb-2 flex items-center gap-1.5" aria-hidden="true">
+            {Array.from({ length: TOTAL_STEPS }, (_, i) => (
+              <span
+                key={i}
+                className={cn(
+                  "h-1 flex-1 rounded-full transition-colors duration-(--duration-slow)",
+                  i < stepNumber ? "bg-accent" : "bg-field",
+                )}
+              />
             ))}
-          </Select>
-        </Field>
-        <Field label={t.address} htmlFor={id(address)}>
-          <Input
-            id={id(address)}
-            name={address}
-            type="text"
-            autoComplete={`section-${section} street-address`}
-            placeholder={t.addressPlaceholder}
-            required
-          />
-        </Field>
+          </div>
+        )}
+        <h3 ref={headingRef} tabIndex={-1} className="text-[0.9375rem] font-semibold outline-none">
+          {stepNumber && <span className="text-sm font-medium text-fg-subtle">{`${t.progress(stepNumber, TOTAL_STEPS)} · `}</span>}
+          {t.stages[stage]}
+        </h3>
       </div>
-    </fieldset>
+
+      <p role="status" aria-live="polite" className="sr-only">
+        {announcement}
+      </p>
+
+      <div key={stage} className="mt-5 animate-rise" style={{ animationDuration: "380ms" }}>
+        {(stage === "route" || stage === "details") && (
+          <form noValidate onSubmit={onSubmitStage(stage)} aria-labelledby="booking-title">
+            {stage === "route" ? <RouteStage form={form} /> : <DetailsStage form={form} />}
+
+            <div className={cn("mt-6 grid gap-3", stage === "details" && !editingFromReview && "grid-cols-[auto_minmax(0,1fr)]")}>
+              {stage === "details" && !editingFromReview && (
+                <Button variant="secondary" size="lg" onClick={() => go(form.goBack)}>
+                  <Icon name="arrowLeft" size={18} />
+                  <span className="sr-only min-[400px]:not-sr-only">{t.back}</span>
+                </Button>
+              )}
+              <Button type="submit" size="lg" className="w-full">
+                {primaryLabel}
+                <Icon name="arrowRight" size={18} className="transition-transform duration-(--duration-base) group-hover/button:translate-x-0.5" />
+              </Button>
+            </div>
+          </form>
+        )}
+
+        {stage === "review" && (
+          <>
+            <ReviewStage form={{ ...form, editStage: (s) => go(() => form.editStage(s)) }} />
+            <Button size="lg" className="mt-6 w-full" onClick={onConfirm}>
+              {t.confirm}
+              <Icon name="check" size={18} />
+            </Button>
+          </>
+        )}
+
+        {stage === "done" && (
+          <div className="space-y-5">
+            <PrototypeNotice title={t.done.title} text={t.done.text} />
+            <div className="grid gap-3">
+              <Button size="lg" className="w-full" onClick={() => go(form.restart)}>
+                {t.restart}
+              </Button>
+              <Button variant="secondary" size="lg" className="w-full" onClick={() => go(form.returnToReview)}>
+                {t.backToReview}
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {stage !== "done" && <p className="mt-3 text-center text-xs leading-relaxed text-fg-subtle">{t.prototypeNote}</p>}
+    </section>
   );
 }

@@ -22,7 +22,7 @@ export function FinalCta() {
             {t.title}
           </h2>
           <p className="mx-auto mt-4 max-w-xl text-lead text-fg-muted">{t.text}</p>
-          <ButtonLink href="#booking" size="lg" className="mt-8 w-full max-[359px]:whitespace-normal sm:w-auto">
+          <ButtonLink href="#booking" size="lg" className="mt-8 w-full sm:w-auto">
             {t.button}
             <Icon name="arrowUp" size={18} />
           </ButtonLink>

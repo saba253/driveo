@@ -29,7 +29,7 @@ export function Header() {
         </nav>
 
         <div className="flex items-center gap-2">
-          <ButtonLink href="#booking" size="sm" className="max-[359px]:hidden">
+          <ButtonLink href="#booking" size="sm" className="whitespace-nowrap max-[359px]:hidden">
             {ka.header.cta}
           </ButtonLink>
           <MobileMenu />

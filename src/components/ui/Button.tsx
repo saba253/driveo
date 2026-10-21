@@ -23,7 +23,7 @@ type StyleOptions = { variant?: Variant; size?: Size; className?: string };
 /** Shared button styling for <button> and <a> elements. */
 export function buttonStyles({ variant = "primary", size = "md", className }: StyleOptions = {}) {
   return cn(
-    "group/button inline-flex select-none items-center justify-center gap-2.5 rounded-md font-semibold whitespace-nowrap",
+    "group/button inline-flex select-none items-center justify-center gap-2.5 rounded-md text-center leading-snug font-semibold",
     "transition-[background-color,border-color,color,box-shadow,transform] duration-(--duration-base) ease-(--ease-out-soft)",
     "active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50",
     variants[variant],
