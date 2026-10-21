@@ -1,10 +1,19 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { DEFAULT_PRICING_CONFIG, roundUpMinor } from "./config.ts";
-import type { PricingEngineConfig, QuoteOutcome, QuoteRequest, RouteLookup, ServiceQuote, ServiceTariff } from "./engine-types.ts";
+import {
+  SERVICE_EXTRA_CATEGORIES,
+  type PricingEngineConfig,
+  type QuoteOutcome,
+  type QuoteRequest,
+  type RouteLookup,
+  type ServiceExtraCategory,
+  type ServiceQuote,
+  type ServiceTariff,
+} from "./engine-types.ts";
 import { fingerprintQuoteInputs } from "./fingerprint.ts";
 import { gel, money } from "./money.ts";
-import { QuoteError, checkQuoteUsable, priceQuote, stripProviderDerived, supersedeQuote, type QuoteMeta } from "./quote.ts";
+import { QuoteError, checkQuoteUsable, priceQuote, pricingContext, stripProviderDerived, supersedeQuote, type QuoteMeta } from "./quote.ts";
 import { FIXTURE_CONFIG, FIXTURE_TARIFF, fixtureRequest, fixtureRoute } from "./test-fixtures.ts";
 
 /* All amounts and distances here are TEST FIXTURES (see test-fixtures.ts). */
@@ -86,7 +95,7 @@ describe("priceQuote — driving, positioning and return", () => {
 
   it("adds extras after the minimum and keeps every amount in whole tetri", async () => {
     const q = await quoted({
-      request: fixtureRequest("Alpha", "Alpha", { extras: [{ code: "waiting", label: "Waiting time", amount: gel(20) }] }),
+      request: fixtureRequest("Alpha", "Alpha", { extras: [{ category: "waiting", code: "waiting", label: "Waiting time", amount: gel(20) }] }),
       route: ok(12, 25),
     });
     assert.equal(q.commercial.total.amountMinor, 10600 + 2000);
@@ -169,8 +178,8 @@ describe("priceQuote — manual pricing instead of guessing", () => {
   });
 
   it("route unavailable → manual pricing; nothing is substituted", async () => {
-    for (const reason of ["notFound", "unavailable", "timeout", "unresolvedAddress"] as const) {
-      assert.deepEqual(await manualCodes({ route: { ok: false, reason } }), ["routeUnavailable"]);
+    for (const kind of ["disabled", "notFound", "unresolvedAddress", "auth", "rateLimited", "usageLimit", "timeout", "unavailable", "malformedResponse"] as const) {
+      assert.deepEqual(await manualCodes({ route: { ok: false, error: { kind, retryable: false } } }), ["routeUnavailable"], kind);
     }
   });
 
@@ -217,18 +226,59 @@ describe("priceQuote — manual pricing instead of guessing", () => {
     for (const config of [dupLocality, badBase, badRule]) assert.deepEqual(await manualCodes({ config }), ["invalidConfig"]);
   });
 
-  it("refuses fuel or charging disguised as an extra, and malformed extras", async () => {
-    const extras = (code: string, label = "x", amount = gel(5)) => fixtureRequest("Alpha", "Beta", { extras: [{ code, label, amount }] });
-    for (const req of [extras("fuel-topup"), extras("ev_charging"), extras("misc", "საწვავი"), extras("misc", "Diesel refill"), extras("neg", "x", money(-1))]) {
-      assert.deepEqual(await manualCodes({ request: req }), ["invalidExtras"]);
+  it("refuses fuel/charging categories, unknown categories, disguised energy charges and malformed extras", async () => {
+    const extras = (category: string, code: string, label = "x", amount = gel(5)) =>
+      fixtureRequest("Alpha", "Beta", { extras: [{ category: category as ServiceExtraCategory, code, label, amount }] });
+    for (const req of [
+      // Explicit energy categories — the primary guard.
+      extras("fuel", "a"),
+      extras("charging", "b"),
+      // Anything outside the allow-list.
+      extras("discount", "c"),
+      extras("", "d"),
+      // Secondary text guard inside an allowed category.
+      extras("otherService", "fuel-topup"),
+      extras("otherService", "ev_charging"),
+      extras("otherService", "misc", "საწვავი"),
+      extras("waiting", "misc", "Diesel refill"),
+      extras("waiting", "neg", "x", money(-1)),
+    ]) {
+      assert.deepEqual(await manualCodes({ request: req }), ["invalidExtras"], JSON.stringify(req.extras));
+    }
+    for (const category of SERVICE_EXTRA_CATEGORIES) {
+      assert.equal((await run({ request: extras(category, `ok-${category}`, "service") })).status, "quoted", category);
     }
     const dup = fixtureRequest("Alpha", "Beta", {
       extras: [
-        { code: "waiting", label: "a", amount: gel(1) },
-        { code: "waiting", label: "b", amount: gel(1) },
+        { category: "waiting", code: "waiting", label: "a", amount: gel(1) },
+        { category: "waiting", code: "waiting", label: "b", amount: gel(1) },
       ],
     });
     assert.deepEqual(await manualCodes({ request: dup }), ["invalidExtras"]);
+  });
+});
+
+describe("priceQuote — vehicle eligibility", () => {
+  it("requires the drivable confirmation and known vehicle types", async () => {
+    const vehicle = (v: Partial<QuoteRequest["vehicle"]>) =>
+      fixtureRequest("Alpha", "Beta", { vehicle: { powertrain: "electric", transmission: "manual", drivableConfirmed: true, ...v } });
+    assert.equal((await run({ request: vehicle({}) })).status, "quoted");
+    assert.deepEqual(await manualCodes({ request: vehicle({ drivableConfirmed: false }) }), ["vehicleNotEligible"]);
+    assert.deepEqual(await manualCodes({ request: vehicle({ powertrain: "steam" as never }) }), ["vehicleNotEligible"]);
+    assert.deepEqual(await manualCodes({ request: vehicle({ transmission: "cvt?" as never }) }), ["vehicleNotEligible"]);
+  });
+});
+
+describe("priceQuote — fixture tariffs never reach production", () => {
+  it("refuses fixture tariffs in a production runtime even when allowFixtures is set", async () => {
+    const env = process.env as Record<string, string | undefined>;
+    const previous = env.NODE_ENV;
+    env.NODE_ENV = "production";
+    try {
+      assert.deepEqual(await manualCodes({ allowFixtures: true }), ["fixtureTariffNotAllowed"]);
+    } finally {
+      env.NODE_ENV = previous;
+    }
   });
 });
 
@@ -252,8 +302,15 @@ describe("priceQuote — admin overrides", () => {
 describe("priceQuote — overnight eligibility", () => {
   const overnight: PricingEngineConfig = { ...FIXTURE_CONFIG, overnight: { mode: "manualReviewAbove", maxSameDayMinutes: 600, handoverMinutes: 40 } };
 
-  it("is 'not_checked' when the policy is disabled", async () => {
-    assert.deepEqual((await quoted({ route: ok(230, 600) })).commercial.overnight, { status: "not_checked" });
+  it("an unconfigured policy blocks automatic pricing (safe default)", async () => {
+    const config: PricingEngineConfig = { ...FIXTURE_CONFIG, overnight: { mode: "notConfigured" } };
+    assert.deepEqual(await manualCodes({ config, route: ok(12, 25), request: fixtureRequest("Alpha", "Alpha") }), ["overnightPolicyNotConfigured"]);
+  });
+
+  it("an explicit, attributed waiver is recorded on the quote", async () => {
+    assert.deepEqual((await quoted({ route: ok(230, 600) })).commercial.overnight, { status: "waived", approvedBy: "fixture" });
+    const anonymous = { ...FIXTURE_CONFIG, overnight: { mode: "waived", approvedBy: " ", reason: "x" } } as PricingEngineConfig;
+    assert.deepEqual(await manualCodes({ config: anonymous }), ["invalidConfig"]);
   });
 
   it("passes within the limit, including exactly at it", async () => {
@@ -297,16 +354,23 @@ describe("quotes — authority, validity and replacement", () => {
   it("is usable only while valid, authoritative and for the same inputs", async () => {
     const request = fixtureRequest("Alpha", "Beta");
     const q = await quoted({ request });
-    const fp = await fingerprintQuoteInputs(request);
+    const ctx = pricingContext(FIXTURE_TARIFF, FIXTURE_CONFIG);
+    const fp = await fingerprintQuoteInputs(request, ctx);
 
     assert.deepEqual(checkQuoteUsable(q, { now: "2026-10-22T07:59:59.000Z", inputFingerprint: fp }), { usable: true });
     assert.deepEqual(checkQuoteUsable(q, { now: "2026-10-22T08:00:00.000Z", inputFingerprint: fp }), { usable: false, reason: "expired" });
 
-    const moved = await fingerprintQuoteInputs({ ...request, delivery: { ...request.delivery, address: "Other street 9" } });
+    const moved = await fingerprintQuoteInputs({ ...request, delivery: { ...request.delivery, address: "Other street 9" } }, ctx);
     assert.deepEqual(checkQuoteUsable(q, { now: NOW, inputFingerprint: moved }), { usable: false, reason: "inputsChanged" });
 
-    const otherDay = await fingerprintQuoteInputs({ ...request, schedule: { date: "2026-10-26", time: "09:00" } });
+    const otherDay = await fingerprintQuoteInputs({ ...request, schedule: { date: "2026-10-26", time: "09:00" } }, ctx);
     assert.deepEqual(checkQuoteUsable(q, { now: NOW, inputFingerprint: otherDay }), { usable: false, reason: "inputsChanged" });
+
+    // A new tariff version or configuration also invalidates the quote.
+    const newTariff = await fingerprintQuoteInputs(request, pricingContext({ ...FIXTURE_TARIFF, version: 2 }, FIXTURE_CONFIG));
+    assert.deepEqual(checkQuoteUsable(q, { now: NOW, inputFingerprint: newTariff }), { usable: false, reason: "inputsChanged" });
+    const newConfig = await fingerprintQuoteInputs(request, pricingContext(FIXTURE_TARIFF, { ...FIXTURE_CONFIG, version: "fixture-config-2" }));
+    assert.deepEqual(checkQuoteUsable(q, { now: NOW, inputFingerprint: newConfig }), { usable: false, reason: "inputsChanged" });
 
     const client = await quoted({ request, meta: { computedBy: "client" } });
     assert.deepEqual(checkQuoteUsable(client, { now: NOW, inputFingerprint: fp }), { usable: false, reason: "notAuthoritative" });

@@ -45,6 +45,7 @@ export const FIXTURE_RULES: readonly TravelRule[] = [
 ];
 
 export const FIXTURE_CONFIG: PricingEngineConfig = {
+  version: "fixture-config-1",
   quoteValidityHours: 24,
   roundingStepMinor: 100,
   base: { zoneId: "alpha", locality: "Alpha" },
@@ -56,7 +57,8 @@ export const FIXTURE_CONFIG: PricingEngineConfig = {
   ],
   travelRules: FIXTURE_RULES,
   plausibility: { maxRoadKm: 1000, minAvgSpeedKmh: 10, maxAvgSpeedKmh: 110, maxRoadToStraightRatio: 3 },
-  overnight: { mode: "disabled" },
+  // Fixture-only waiver so price tests are not blocked; real config starts as "notConfigured".
+  overnight: { mode: "waived", approvedBy: "fixture", reason: "test fixture" },
 };
 
 /**
@@ -66,6 +68,7 @@ export const FIXTURE_CONFIG: PricingEngineConfig = {
  */
 export const FIXTURE_TBILISI_CONFIG: PricingEngineConfig = {
   ...FIXTURE_CONFIG,
+  version: "fixture-tbilisi-config-1",
   base: INITIAL_HOME_BASE,
   zones: [
     HOME_BASE_ZONE,
@@ -100,5 +103,6 @@ export const fixtureRequest = (pickup: string, delivery: string, overrides: Part
   pickup: { locality: pickup, address: "Fixture street 1", placeId: null },
   delivery: { locality: delivery, address: "Fixture avenue 2", placeId: null },
   schedule: { date: "2026-10-25", time: "09:00" },
+  vehicle: { powertrain: "petrol", transmission: "automatic", drivableConfirmed: true },
   ...overrides,
 });

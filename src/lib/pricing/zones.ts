@@ -63,6 +63,7 @@ const isNonNegativeMoney = (m: { amountMinor: number; currency: string }) =>
 export function validatePricingConfig(config: PricingEngineConfig): string[] {
   const issues: string[] = [];
 
+  if (!config.version?.trim()) issues.push("version is required");
   if (!Number.isFinite(config.quoteValidityHours) || config.quoteValidityHours <= 0) issues.push("quoteValidityHours must be > 0");
   if (config.roundingStepMinor !== null && (!Number.isSafeInteger(config.roundingStepMinor) || config.roundingStepMinor <= 0)) {
     issues.push("roundingStepMinor must be a positive integer or null");
@@ -120,6 +121,7 @@ export function validatePricingConfig(config: PricingEngineConfig): string[] {
 
   // Overnight
   const o = config.overnight;
+  if (o.mode === "waived" && (!o.approvedBy?.trim() || !o.reason?.trim())) issues.push("overnight waiver needs approvedBy and reason");
   if (o.mode === "manualReviewAbove") {
     if (!(o.maxSameDayMinutes > 0)) issues.push("overnight.maxSameDayMinutes must be > 0");
     if (!Number.isFinite(o.handoverMinutes) || o.handoverMinutes < 0) issues.push("overnight.handoverMinutes must be >= 0");

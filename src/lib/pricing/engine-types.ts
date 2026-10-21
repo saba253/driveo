@@ -1,5 +1,7 @@
+import type { Powertrain, Transmission } from "../booking/types.ts";
+import type { RoadRoute, RouteResult } from "../routing/types.ts";
 import type { Money } from "./money.ts";
-import type { AdditionalCharge, QuoteStatus, Tariff } from "./types.ts";
+import type { QuoteStatus, Tariff } from "./types.ts";
 
 /**
  * Types for the quote engine (src/lib/pricing/quote.ts).
@@ -71,8 +73,10 @@ export type TravelOverride = {
 };
 
 export type OvernightPolicy =
-  /** No check is performed; quotes carry overnight status "not_checked". */
-  | { mode: "disabled" }
+  /** Not decided yet: every quote goes to manual pricing (safe default). */
+  | { mode: "notConfigured" }
+  /** Explicit, attributed decision that no same-day limit applies. */
+  | { mode: "waived"; approvedBy: string; reason: string }
   /**
    * Jobs whose total driver commitment exceeds the limit go to manual pricing.
    * No allowance is ever computed automatically.
@@ -94,6 +98,8 @@ export type DriverBase = { zoneId: string; locality: string };
 export type QuoteDriver = { id: string; base: DriverBase };
 
 export type PricingEngineConfig = {
+  /** Identity of this configuration (zones, rules, limits). Changing it invalidates quotes. */
+  version: string;
   quoteValidityHours: number;
   roundingStepMinor: number | null;
   /**
@@ -119,6 +125,27 @@ export type QuoteEndpoint = {
   coordinates?: { lat: number; lng: number } | null;
 };
 
+/** Explicit extra categories. Anything else — including fuel and charging — is rejected. */
+export const SERVICE_EXTRA_CATEGORIES = ["waiting", "parking", "toll", "ferry", "afterHours", "otherService"] as const;
+export type ServiceExtraCategory = (typeof SERVICE_EXTRA_CATEGORIES)[number];
+
+/** Categories that must never be part of the service price (FUEL_POLICY). */
+export const ENERGY_EXTRA_CATEGORIES = ["fuel", "charging"] as const;
+
+export type ServiceExtra = {
+  category: ServiceExtraCategory;
+  code: string;
+  label: string;
+  amount: Money;
+};
+
+/** Vehicle facts that decide whether a job can be priced automatically. */
+export type QuoteVehicle = {
+  powertrain: Powertrain;
+  transmission: Transmission;
+  drivableConfirmed: boolean;
+};
+
 /** Our own pricing inputs — safe to keep in commercial records. */
 export type QuoteRequest = {
   /** Stable id of the customer's booking request; quotes for it form a version chain. */
@@ -126,7 +153,8 @@ export type QuoteRequest = {
   pickup: QuoteEndpoint;
   delivery: QuoteEndpoint;
   schedule: { date: string; time: string };
-  extras?: readonly AdditionalCharge[];
+  vehicle: QuoteVehicle;
+  extras?: readonly ServiceExtra[];
   overrides?: { positioning?: TravelOverride; return?: TravelOverride };
 };
 
@@ -135,15 +163,10 @@ export type QuoteRequest = {
  * from our records because provider terms may restrict how long it is retained —
  * see docs/google-maps-data-retention.md.
  */
-export type ProviderRoute = {
-  provider: string;
-  method: "road";
-  distanceKm: number;
-  durationMinutes: number;
-  computedAt: string;
-};
+export type ProviderRoute = RoadRoute;
 
-export type RouteLookup = { ok: true; route: ProviderRoute } | { ok: false; reason: "notFound" | "unavailable" | "timeout" | "unresolvedAddress" };
+/** A provider's normalized answer (see src/lib/routing). */
+export type RouteLookup = RouteResult;
 
 /* ---------------------------------------------------------------- outcome */
 
@@ -154,6 +177,7 @@ export type ManualReasonCode =
   | "fixtureTariffNotAllowed"
   | "invalidTariff"
   | "invalidDriverBase"
+  | "vehicleNotEligible"
   | "unknownPickupLocality"
   | "unknownDeliveryLocality"
   | "routeUnavailable"
@@ -166,6 +190,7 @@ export type ManualReasonCode =
   | "missingReturnRule"
   | "invalidOverride"
   | "invalidExtras"
+  | "overnightPolicyNotConfigured"
   | "overnightRequired";
 
 export type ManualReason = { code: ManualReasonCode; detail?: string };
@@ -184,7 +209,7 @@ export type CommercialLine = {
 };
 
 export type OvernightCheck =
-  | { status: "not_checked" }
+  | { status: "waived"; approvedBy: string }
   | { status: "within_limit"; limitMinutes: number };
 
 /** Our commercial record: safe to persist long-term. */
@@ -192,6 +217,7 @@ export type CommercialQuote = {
   currency: "GEL";
   tariffId: string;
   tariffVersion: number;
+  configVersion: string;
   /** Driver the quote was priced for; null = default base (single-driver setup). */
   driverId: string | null;
   zones: { base: string; pickup: string; delivery: string };

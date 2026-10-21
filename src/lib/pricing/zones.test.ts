@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { canonicalQuoteInputs, fingerprintQuoteInputs } from "./fingerprint.ts";
 import { gel } from "./money.ts";
-import { FIXTURE_CONFIG, fixtureRequest } from "./test-fixtures.ts";
+import { pricingContext } from "./quote.ts";
+import { FIXTURE_CONFIG, FIXTURE_TARIFF, fixtureRequest } from "./test-fixtures.ts";
+
+const CTX = pricingContext(FIXTURE_TARIFF, FIXTURE_CONFIG);
 import { findTravelRule, matchLocality, normalizeLocality, validatePricingConfig } from "./zones.ts";
 
 /* Zones and rules are TEST FIXTURES (see test-fixtures.ts). */
@@ -89,8 +92,8 @@ describe("input fingerprints", () => {
     const b = fixtureRequest(" ALPHA ", "beta", {
       pickup: { locality: " ALPHA ", address: "  fixture   STREET 1.", placeId: null, coordinates: { lat: 1, lng: 2 } },
     });
-    assert.equal(await fingerprintQuoteInputs(a), await fingerprintQuoteInputs(b));
-    assert.match(await fingerprintQuoteInputs(a), /^sha256:[0-9a-f]{64}$/);
+    assert.equal(await fingerprintQuoteInputs(a, CTX), await fingerprintQuoteInputs(b, CTX));
+    assert.match(await fingerprintQuoteInputs(a, CTX), /^sha256:[0-9a-f]{64}$/);
   });
 
   it("changes when anything price-relevant changes", async () => {
@@ -100,19 +103,38 @@ describe("input fingerprints", () => {
       { ...base, delivery: { ...base.delivery, locality: "Gamma" } },
       { ...base, delivery: { ...base.delivery, placeId: "place-123" } },
       { ...base, schedule: { ...base.schedule, time: "10:00" } },
-      { ...base, extras: [{ code: "waiting", label: "w", amount: gel(10) }] },
+      { ...base, extras: [{ category: "waiting" as const, code: "waiting", label: "w", amount: gel(10) }] },
       { ...base, overrides: { return: { fare: gel(5), travelMinutes: 10, reason: "r", by: "a" } } },
+      // Eligibility-relevant vehicle facts.
+      { ...base, vehicle: { ...base.vehicle, powertrain: "electric" as const } },
+      { ...base, vehicle: { ...base.vehicle, transmission: "manual" as const } },
+      { ...base, vehicle: { ...base.vehicle, drivableConfirmed: false } },
     ];
-    const original = canonicalQuoteInputs(base);
-    for (const v of variants) assert.notEqual(canonicalQuoteInputs(v), original);
+    const original = canonicalQuoteInputs(base, CTX);
+    for (const v of variants) assert.notEqual(canonicalQuoteInputs(v, CTX), original, JSON.stringify(v));
+  });
+
+  it("changes when the pricing context changes (tariff, configuration, driver, base)", () => {
+    const req = fixtureRequest("Alpha", "Beta");
+    const original = canonicalQuoteInputs(req, CTX);
+    for (const ctx of [
+      pricingContext(null, FIXTURE_CONFIG),
+      pricingContext({ ...FIXTURE_TARIFF, version: 2 }, FIXTURE_CONFIG),
+      pricingContext({ ...FIXTURE_TARIFF, id: "other" }, FIXTURE_CONFIG),
+      pricingContext(FIXTURE_TARIFF, { ...FIXTURE_CONFIG, version: "fixture-config-2" }),
+      pricingContext(FIXTURE_TARIFF, FIXTURE_CONFIG, { id: "driver-2", base: FIXTURE_CONFIG.base }),
+      pricingContext(FIXTURE_TARIFF, FIXTURE_CONFIG, { id: "driver-2", base: { zoneId: "beta", locality: "Beta" } }),
+    ]) {
+      assert.notEqual(canonicalQuoteInputs(req, ctx), original, JSON.stringify(ctx));
+    }
   });
 
   it("does not depend on extras order or the request id", () => {
-    const e1 = { code: "a", label: "A", amount: gel(1) };
-    const e2 = { code: "b", label: "B", amount: gel(2) };
+    const e1 = { category: "parking" as const, code: "a", label: "A", amount: gel(1) };
+    const e2 = { category: "toll" as const, code: "b", label: "B", amount: gel(2) };
     assert.equal(
-      canonicalQuoteInputs(fixtureRequest("Alpha", "Beta", { extras: [e1, e2] })),
-      canonicalQuoteInputs({ ...fixtureRequest("Alpha", "Beta", { extras: [e2, e1] }), requestId: "other" }),
+      canonicalQuoteInputs(fixtureRequest("Alpha", "Beta", { extras: [e1, e2] }), CTX),
+      canonicalQuoteInputs({ ...fixtureRequest("Alpha", "Beta", { extras: [e2, e1] }), requestId: "other" }, CTX),
     );
   });
 });

@@ -1,14 +1,15 @@
 /**
- * Contract for a future road-routing service (e.g. a maps/directions API
- * called from the server). Nothing implements it yet: the site never invents
- * distances, and pricing never falls back to straight-line distance.
+ * Road-routing contract. Providers return a normalized RouteResult and never
+ * throw for expected failures. Pricing never falls back to straight-line
+ * distance: any failure becomes a manual-pricing outcome.
  */
 
 export type RoutePoint = {
   city: string;
   address: string;
-  /** Filled by geocoding once a provider exists. */
-  coordinates?: { lat: number; lng: number };
+  /** Provider place id from address autocomplete; preferred when present. */
+  placeId?: string | null;
+  coordinates?: { lat: number; lng: number } | null;
 };
 
 export type RouteRequest = { origin: RoutePoint; destination: RoutePoint };
@@ -19,23 +20,53 @@ export type RoadRoute = {
   durationMinutes: number;
   /** Always "road": pricing rejects anything else. */
   method: "road";
-  /** Provider id, recorded in quote snapshots. */
+  /** Provider id, recorded with provider-derived data. */
   provider: string;
   computedAt: string;
 };
 
-export type RouteFailureReason = "notFound" | "ambiguousAddress" | "unreachable" | "providerError";
+export type RouteErrorKind =
+  /** Live requests are switched off (feature flag) or not configured. */
+  | "disabled"
+  /** Provider found no drivable route between the points. */
+  | "notFound"
+  /** An address or place could not be resolved by the provider. */
+  | "unresolvedAddress"
+  /** Our request was rejected as invalid (a bug or bad input). */
+  | "invalidRequest"
+  /** Credentials missing, invalid or not permitted for this API. */
+  | "auth"
+  /** Provider quota or rate limit exceeded. */
+  | "rateLimited"
+  /** Our own usage guard refused the call (daily/monthly cap). */
+  | "usageLimit"
+  | "timeout"
+  /** Network failure or provider 5xx. */
+  | "unavailable"
+  /** Response could not be interpreted safely. */
+  | "malformedResponse";
 
-export class RouteUnavailableError extends Error {
-  readonly reason: RouteFailureReason;
-  constructor(reason: RouteFailureReason, message?: string) {
-    super(message ?? reason);
-    this.reason = reason;
-  }
-}
+export type RouteError = {
+  kind: RouteErrorKind;
+  /** Whether trying again later could succeed. */
+  retryable: boolean;
+  httpStatus?: number;
+  /** Provider status string, e.g. "PERMISSION_DENIED". Never contains credentials. */
+  providerStatus?: string;
+  attempts?: number;
+};
+
+export type RouteResult = { ok: true; route: RoadRoute } | { ok: false; error: RouteError };
 
 export interface RouteProvider {
   readonly id: string;
-  /** Resolves the road route or throws RouteUnavailableError. */
-  getRoadRoute(request: RouteRequest): Promise<RoadRoute>;
+  computeRoute(request: RouteRequest): Promise<RouteResult>;
 }
+
+/** Provider used whenever live routing is off: always reports "disabled". */
+export const disabledRouteProvider: RouteProvider = {
+  id: "disabled",
+  async computeRoute() {
+    return { ok: false, error: { kind: "disabled", retryable: false } };
+  },
+};

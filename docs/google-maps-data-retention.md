@@ -1,22 +1,33 @@
-# Google Maps Platform — route data retention
+# Google Maps Platform — data retention, caching and attribution
 
-**Status:** open legal/compliance question. **Must be resolved before quotes are persisted** (Supabase, logs, analytics or backups).
+**Status:** open legal/compliance questions. **Resolve before quotes are persisted** (database, logs, analytics or backups) **and before customers see any Google-derived value.** Reviewed 2026-10-21; terms change — re-check at implementation time.
 
-## The issue
+Sources:
 
-DRIVEO plans to use the Google Maps Platform (Places, Geocoding, Routes API) for address resolution and road distance/duration. Google's terms restrict pre-fetching, caching and storing of Google Maps content:
+- Service Specific Terms: https://cloud.google.com/maps-platform/terms/maps-service-terms
+- Routes API policies: https://developers.google.com/maps/documentation/routes/policies
+- Geocoding API policies: https://developers.google.com/maps/documentation/geocoding/policies
+- Places Autocomplete (New) session pricing: https://developers.google.com/maps/documentation/places/web-service/session-pricing
 
-- Place IDs are documented as exempt from caching restrictions and may be stored indefinitely.
-- The Service Specific Terms allow latitude/longitude from the Geocoding and Directions APIs to be cached temporarily — 30 consecutive calendar days in the versions reviewed — after which they must be deleted.
-- We did **not** find an explicit statement covering how long **Routes API distance and duration** values may be retained, or whether keeping them inside a transactional quote record is permitted.
+## What the terms say (as reviewed)
 
-Therefore we must **not assume** that route distance and duration may be stored indefinitely.
+| Topic | Finding | Confidence |
+|---|---|---|
+| Caching in general | Pre-fetching, caching or storing Google Maps content is generally restricted. | Stated in the API policy pages |
+| Place IDs | Exempt from caching restrictions; may be stored indefinitely. | Stated |
+| Latitude/longitude | May be cached temporarily — 30 consecutive calendar days in the Service Specific Terms versions reviewed (Geocoding, Directions), then deleted. | Stated for those APIs; **not confirmed for Routes** |
+| Routes API distance/duration | **No explicit retention rule found.** | ⚠️ Open |
+| Display on a map | Routes results shown on a map must use a Google Map. | Stated |
+| Attribution without a map | Required: Google Maps logo (preferred) or the text "Google Maps" with prescribed styling, near the content, not translated. | Stated |
+| Policy pages | We must publish Terms of Use and a Privacy Policy that reference Google's terms. | Stated |
 
-Sources to re-check at implementation time (terms change):
+## Decisions needed from the founder / legal review
 
-- https://cloud.google.com/maps-platform/terms/maps-service-terms
-- https://developers.google.com/maps/documentation/routes/policies
-- https://developers.google.com/maps/documentation/geocoding/policies
+1. **Retention of Routes distance/duration** — may they be kept inside a quote record, and for how long? Ask Google (support/sales) or counsel. Until answered, treat them as restricted.
+2. **Is a price derived from Google distance "Google content"?** Our position in code: the price is DRIVEO's commercial output; the distance it was computed from is provider content. Needs confirmation.
+3. **Attribution placement** — when the price card shows a quote based on Google routing (no map), where does the "Google Maps" attribution appear? Proposed: small attribution under the price card and the address search field.
+4. **Purge window** for provider data — proposed: at quote expiry (24 h default) or within 30 days, whichever is earlier.
+5. **Terms of Use and Privacy Policy** — must exist and reference Google's terms before any Google-backed feature is public.
 
 ## How the code is prepared
 
@@ -24,20 +35,19 @@ Sources to re-check at implementation time (terms change):
 
 | Section | Contents | Retention |
 |---|---|---|
-| `commercial` | Tariff id/version, zones, priced lines (amounts only), totals, rounding, overnight status | Our business record — keep as required for accounting |
-| `inputFingerprint` | SHA-256 of our own customer inputs (normalized addresses, localities, place IDs, date/time, extras, overrides) — no coordinates, no route data | Keep |
-| `providerDerived` | Provider route (`distanceKm`, `durationMinutes`, provider, timestamp) and the overnight commitment minutes that include provider duration; marked `retention: "provider_restricted"` | **Purge per policy** |
+| `commercial` | Tariff id/version, config version, driver, zones, priced lines (amounts only), totals, rounding, overnight status | Our business record |
+| `inputFingerprint` | SHA-256 over our own inputs and pricing context — no coordinates, no route data | Keep |
+| `providerDerived` | Provider route (distance, duration, provider, timestamp) and the overnight commitment minutes that include provider duration; `retention: "provider_restricted"` | **Purge per decision 4** |
 
-- Commercial lines never contain the provider distance or duration (tests assert this).
-- `stripProviderDerived(quote)` removes the provider section without touching the commercial record.
+- Commercial lines never contain provider distance or duration (tests assert this).
+- `stripProviderDerived(quote)` removes provider data without touching the commercial record.
 - Coordinates are used only for in-memory sanity checks and are excluded from fingerprints.
-
-Note: the *price* of the distance line is derived from the provider distance. It is our commercial output, not provider content, but this interpretation should be confirmed in the same review.
+- The routing adapter requests only distance and duration (minimal field mask) and only for resolved place IDs or coordinates.
+- Provider error messages are never stored or returned — only normalized kinds and enum-like statuses.
 
 ## Required before persistence (Step 1.7)
 
-1. Confirm with the current Google terms (or Google support/sales) how long Routes API distance/duration may be retained and in what form.
+1. Resolve decisions 1, 2 and 4.
 2. Store `providerDerived` in a separate table/column with a `purge_after` timestamp; run a scheduled purge.
-3. Until confirmed, set `purge_after` conservatively — e.g. at quote expiry or within the 30-day window used for geocoding coordinates, whichever is earlier (**founder/legal decision**).
-4. Exclude `providerDerived` from analytics exports and long-term backups, or purge those too.
-5. Publish Terms of Use and a Privacy Policy that reference Google's, as the Routes API policies require.
+3. Exclude `providerDerived` from analytics exports and long-term backups, or purge those too.
+4. Publish Terms of Use and Privacy Policy (decision 5) and implement attribution (decision 3).

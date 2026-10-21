@@ -1,20 +1,23 @@
 import { checkRoutePlausibility } from "./checks.ts";
 import { quoteExpiry, roundUpMinor } from "./config.ts";
-import type {
-  CommercialLine,
-  ManualReason,
-  OvernightCheck,
-  QuoteDriver,
-  PricingEngineConfig,
-  QuoteOutcome,
-  QuoteRequest,
-  RouteLookup,
-  ServiceQuote,
-  ServiceTariff,
-  TravelOverride,
-  TravelRule,
+import { POWERTRAINS, TRANSMISSIONS } from "../booking/types.ts";
+import {
+  ENERGY_EXTRA_CATEGORIES,
+  SERVICE_EXTRA_CATEGORIES,
+  type CommercialLine,
+  type ManualReason,
+  type OvernightCheck,
+  type QuoteDriver,
+  type PricingEngineConfig,
+  type QuoteOutcome,
+  type QuoteRequest,
+  type RouteLookup,
+  type ServiceQuote,
+  type ServiceTariff,
+  type TravelOverride,
+  type TravelRule,
 } from "./engine-types.ts";
-import { fingerprintQuoteInputs } from "./fingerprint.ts";
+import { fingerprintQuoteInputs, type PricingContext } from "./fingerprint.ts";
 import { money, sumMoney, type Money } from "./money.ts";
 import type { QuoteStatus } from "./types.ts";
 import { findTravelRule, matchLocality, validatePricingConfig, type ZoneMatch } from "./zones.ts";
@@ -48,12 +51,30 @@ export type PriceQuoteArgs = {
   meta: QuoteMeta;
   /** Driver-specific base; when omitted the config's default base is used. */
   driver?: QuoteDriver | null;
-  /** Tests only: allow tariffs marked `fixture: true`. Never set in application code. */
+  /**
+   * Tests only: allow tariffs marked `fixture: true`. Ignored in production
+   * builds, and lint forbids importing fixtures outside *.test.ts files.
+   */
   allowFixtures?: boolean;
 };
 
-/** Charge codes that would smuggle fuel or charging into the service price. */
-const ENERGY_CODE = /fuel|petrol|diesel|gas|lpg|cng|charg|electric|energy|kwh|საწვავ|ბენზინ|დიზელ|დატენვ/i;
+/** The context a quote is priced in; callers use it to recompute fingerprints before booking. */
+export function pricingContext(tariff: ServiceTariff | null, config: PricingEngineConfig, driver?: QuoteDriver | null): PricingContext {
+  return {
+    tariff: tariff ? { id: tariff.id, version: tariff.version } : null,
+    configVersion: config.version,
+    driverId: driver?.id ?? null,
+    base: driver?.base ?? config.base,
+  };
+}
+
+const isProductionRuntime = () => globalThis.process?.env?.NODE_ENV === "production";
+
+/**
+ * Secondary guard on extra codes and labels. The primary guard is the explicit
+ * category allow-list (SERVICE_EXTRA_CATEGORIES).
+ */
+const ENERGY_TEXT = /fuel|petrol|diesel|gas|lpg|cng|charg|electric|energy|kwh|საწვავ|ბენზინ|დიზელ|დატენვ/i;
 
 function tariffIssues(t: ServiceTariff): string[] {
   const issues: string[] = [];
@@ -97,7 +118,8 @@ export async function priceQuote(args: PriceQuoteArgs): Promise<QuoteOutcome> {
   if (!Number.isInteger(meta.version) || meta.version < 1) throw new QuoteError("Quote version must be a positive integer");
   if (Number.isNaN(Date.parse(meta.now))) throw new QuoteError(`Invalid now: ${meta.now}`);
 
-  const inputFingerprint = await fingerprintQuoteInputs(request);
+  const baseDef = args.driver?.base ?? config.base;
+  const inputFingerprint = await fingerprintQuoteInputs(request, pricingContext(tariff, config, args.driver));
   const reasons: ManualReason[] = [];
   const manual = (): QuoteOutcome => ({
     status: "manual_pricing",
@@ -117,14 +139,15 @@ export async function priceQuote(args: PriceQuoteArgs): Promise<QuoteOutcome> {
   // 2. Tariff
   if (!tariff) reasons.push({ code: "missingTariff" });
   else if (tariff.status !== "active") reasons.push({ code: "tariffNotActive", detail: tariff.status });
-  else if (tariff.fixture && !args.allowFixtures) reasons.push({ code: "fixtureTariffNotAllowed", detail: tariff.id });
+  else if (tariff.fixture && (!args.allowFixtures || isProductionRuntime())) {
+    reasons.push({ code: "fixtureTariffNotAllowed", detail: tariff.id });
+  }
   else {
     const issues = tariffIssues(tariff);
     if (issues.length > 0) reasons.push({ code: "invalidTariff", detail: issues.join(", ") });
   }
 
   // 3. Base and zones — the base comes from configuration or the driver, never from code.
-  const baseDef = args.driver?.base ?? config.base;
   const base = matchLocality(config.zones, baseDef.locality);
   if (!base || base.zoneId !== baseDef.zoneId) {
     reasons.push({ code: "invalidDriverBase", detail: `${args.driver?.id ?? "default"}: ${baseDef.locality} / ${baseDef.zoneId}` });
@@ -134,11 +157,18 @@ export async function priceQuote(args: PriceQuoteArgs): Promise<QuoteOutcome> {
   if (!pickupZone) reasons.push({ code: "unknownPickupLocality", detail: request.pickup.locality });
   if (!deliveryZone) reasons.push({ code: "unknownDeliveryLocality", detail: request.delivery.locality });
 
-  // 4. Route — never substituted when unavailable.
-  if (!route.ok) reasons.push({ code: "routeUnavailable", detail: route.reason });
+  // 4. Vehicle — only drivable vehicles of known types can be priced automatically.
+  const v = request.vehicle;
+  if (!v || v.drivableConfirmed !== true) reasons.push({ code: "vehicleNotEligible", detail: "drivable confirmation missing" });
+  else if (!(POWERTRAINS as readonly string[]).includes(v.powertrain) || !(TRANSMISSIONS as readonly string[]).includes(v.transmission)) {
+    reasons.push({ code: "vehicleNotEligible", detail: "unknown powertrain or transmission" });
+  }
+
+  // 5. Route — never substituted when unavailable.
+  if (!route.ok) reasons.push({ code: "routeUnavailable", detail: route.error.kind });
   else reasons.push(...checkRoutePlausibility(route.route, request.pickup, request.delivery, config.plausibility));
 
-  // 5. Travel legs — a missing rule is a manual-pricing reason, never a zero cost.
+  // 6. Travel legs — a missing rule is a manual-pricing reason, never a zero cost.
   for (const [leg, o] of Object.entries(request.overrides ?? {}) as [string, TravelOverride][]) {
     const issue = overrideIssues(o);
     if (issue) reasons.push({ code: "invalidOverride", detail: `${leg}: ${issue}` });
@@ -148,23 +178,32 @@ export async function priceQuote(args: PriceQuoteArgs): Promise<QuoteOutcome> {
   if (positioning === "missing") reasons.push({ code: "missingPositioningRule", detail: `${baseDef.zoneId} → ${pickupZone?.zoneId}` });
   if (ret === "missing") reasons.push({ code: "missingReturnRule", detail: `${deliveryZone?.zoneId} → ${baseDef.zoneId}` });
 
-  // 6. Extras — explicit, unique, GEL, and never fuel or charging.
+  // 7. Extras — explicit allowed category, unique code, GEL, and never fuel or charging.
   const codes = new Set<string>();
   for (const charge of request.extras ?? []) {
     const m = charge.amount;
+    const category = String(charge.category);
     if (!charge.code || codes.has(charge.code)) reasons.push({ code: "invalidExtras", detail: `duplicate or empty code "${charge.code}"` });
-    else if (ENERGY_CODE.test(charge.code) || ENERGY_CODE.test(charge.label)) {
-      reasons.push({ code: "invalidExtras", detail: `"${charge.code}": fuel and charging are never part of the service price` });
+    else if ((ENERGY_EXTRA_CATEGORIES as readonly string[]).includes(category)) {
+      reasons.push({ code: "invalidExtras", detail: `"${charge.code}": category "${category}" is never part of the service price` });
+    } else if (!(SERVICE_EXTRA_CATEGORIES as readonly string[]).includes(category)) {
+      reasons.push({ code: "invalidExtras", detail: `"${charge.code}": unknown category "${category}"` });
+    } else if (ENERGY_TEXT.test(charge.code) || ENERGY_TEXT.test(charge.label)) {
+      reasons.push({ code: "invalidExtras", detail: `"${charge.code}": looks like fuel or charging, which are never part of the service price` });
     } else if (m.currency !== "GEL" || !Number.isSafeInteger(m.amountMinor) || m.amountMinor < 0) {
       reasons.push({ code: "invalidExtras", detail: `"${charge.code}": amount must be non-negative GEL in whole tetri` });
     }
     codes.add(charge.code);
   }
 
-  // 7. Overnight eligibility — only when configured; no allowance is ever computed.
-  let overnight: OvernightCheck = { status: "not_checked" };
+  // 8. Overnight eligibility — an undecided policy blocks automatic pricing; no allowance is ever computed.
+  let overnight: OvernightCheck | null = null;
   let commitmentMinutes: number | null = null;
-  if (config.overnight.mode === "manualReviewAbove" && route.ok && typeof positioning === "object" && typeof ret === "object") {
+  if (config.overnight.mode === "notConfigured") {
+    reasons.push({ code: "overnightPolicyNotConfigured" });
+  } else if (config.overnight.mode === "waived") {
+    overnight = { status: "waived", approvedBy: config.overnight.approvedBy };
+  } else if (route.ok && typeof positioning === "object" && typeof ret === "object") {
     commitmentMinutes = positioning.travelMinutes + config.overnight.handoverMinutes + route.route.durationMinutes + ret.travelMinutes;
     if (commitmentMinutes > config.overnight.maxSameDayMinutes) {
       reasons.push({ code: "overnightRequired", detail: `${Math.round(commitmentMinutes)} > ${config.overnight.maxSameDayMinutes} min` });
@@ -173,11 +212,21 @@ export async function priceQuote(args: PriceQuoteArgs): Promise<QuoteOutcome> {
     }
   }
 
-  if (reasons.length > 0 || !tariff || !route.ok || typeof positioning !== "object" || typeof ret !== "object" || !base || !pickupZone || !deliveryZone) {
+  if (
+    reasons.length > 0 ||
+    !tariff ||
+    !route.ok ||
+    !overnight ||
+    typeof positioning !== "object" ||
+    typeof ret !== "object" ||
+    !base ||
+    !pickupZone ||
+    !deliveryZone
+  ) {
     return manual();
   }
 
-  // 8. Price — integer tetri throughout.
+  // 9. Price — integer tetri throughout.
   const lines: CommercialLine[] = [];
   const distance = money(Math.round(route.route.distanceKm * tariff.perKmMinor));
   lines.push({ kind: "baseFee", code: "baseFee", amount: tariff.baseFee });
@@ -219,6 +268,7 @@ export async function priceQuote(args: PriceQuoteArgs): Promise<QuoteOutcome> {
       currency: "GEL",
       tariffId: tariff.id,
       tariffVersion: tariff.version,
+      configVersion: config.version,
       driverId: args.driver?.id ?? null,
       zones: { base: base.zoneId, pickup: pickupZone.zoneId, delivery: deliveryZone.zoneId },
       lines,

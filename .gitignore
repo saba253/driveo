@@ -45,3 +45,6 @@ next-env.d.ts
 
 # stray local clone of the GitHub repo (not part of this project)
 /driver/
+
+# documented, value-free template
+!.env.example

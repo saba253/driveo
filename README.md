@@ -22,7 +22,9 @@ src/
     booking/      types, validation, phone parsing, versioned policies
     pricing/      money (integer tetri), tariff/quote types, pure price calculation
     fuel/         energy-estimate model, kept separate from the service price
-    routing/      RouteProvider interface for a future road-distance service
+    routing/      RouteProvider contract, Google Routes adapter (mock-tested), settings, usage guard
+  server/         server-only entry points (routing provider; live Google calls OFF by default)
+docs/             Google Cloud setup checklist, Google data-retention/attribution notes
 public/images/    licensed, optimized imagery only
 ```
 
