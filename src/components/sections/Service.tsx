@@ -10,7 +10,7 @@ export function Service() {
     <section id="service" aria-labelledby="service-title" className="py-20 sm:py-28 lg:py-32">
       <Container className="grid gap-12 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-20">
         <div className="reveal min-w-0">
-          <SectionHeading id="service-title" eyebrow={t.eyebrow} title={t.title} intro={t.intro} />
+          <SectionHeading id="service-title" eyebrow={t.eyebrow} title={t.title} titleAccent={t.titleAccent} intro={t.intro} />
 
           {/* Not a tow truck — the core distinction of the service. */}
           <aside className="mt-8 flex gap-4 rounded-lg border border-line bg-surface/60 p-5 sm:p-6" aria-labelledby="service-note-title">

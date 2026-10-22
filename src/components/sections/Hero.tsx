@@ -21,8 +21,8 @@ export function Hero() {
           </p>
 
           <h1 id="hero-title" className="mt-5 animate-rise text-display font-bold [--delay:80ms]">
-            <span className="block">{t.titleLead}</span>
-            <span className="block text-accent">{t.titleAccent}</span>
+            <span className="block text-balance">{t.titleLead}</span>
+            <span className="block text-balance text-accent">{t.titleAccent}</span>
           </h1>
 
           <p className="mt-6 max-w-xl animate-rise text-lead text-fg-muted [--delay:160ms]">{t.lead}</p>
