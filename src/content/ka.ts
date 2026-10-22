@@ -437,6 +437,16 @@ export const ka = {
       route: "მარშრუტი",
       date: "თარიღი",
       status: "სტატუსი",
+      pickupDate: "გაყვანის თარიღი",
+      pickupTime: "გაყვანის დრო",
+      /** When the request reached DRIVEO — not the pickup time. */
+      submittedAt: "მოთხოვნის მიღების დრო",
+      timeZoneNote: "დრო მითითებულია საქართველოს დროით (Asia/Tbilisi).",
+    },
+    /** Explicit fallbacks: a missing pickup time is never replaced by another timestamp. */
+    schedule: {
+      dateMissing: "თარიღი მითითებული არ არის",
+      timeMissing: "დრო მითითებული არ არის",
     },
     statuses: {
       submitted: "მიღებული",

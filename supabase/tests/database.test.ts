@@ -338,7 +338,19 @@ describe("booking submission", () => {
       [r.reference],
     );
     const p = rows[0].payload;
-    assert.deepEqual(Object.keys(p).sort(), ["delivery_city", "pickup_city", "reference", "submitted_at", "vehicle_make", "vehicle_model"]);
+    assert.deepEqual(Object.keys(p).sort(), [
+      "delivery_city",
+      "pickup_city",
+      "reference",
+      "requested_date",
+      "requested_time",
+      "submitted_at",
+      "vehicle_make",
+      "vehicle_model",
+    ]);
+    // The requested pickup as stored (Asia/Tbilisi wall clock), not the submission time.
+    assert.equal(p.requested_date, "2026-11-02");
+    assert.equal(p.requested_time, "10:00");
     const text = JSON.stringify(p);
     assert.doesNotMatch(text, /\+995|ტესტაძე|ქუჩა|გამზირი/);
   });

@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { SignOutButton } from "@/components/admin/SignOutButton";
-import { Badge } from "@/components/ui/Badge";
 import { ka } from "@/content/ka";
-import type { BookingStatus } from "@/lib/booking/lifecycle";
+import { BookingList } from "@/components/admin/BookingList";
+import { ADMIN_BOOKING_COLUMNS, toAdminBookingItem, type AdminBookingRow } from "@/lib/booking/admin-list";
 import { routeAdminPage } from "@/server/admin-auth";
 
 const t = ka.admin;
@@ -16,24 +16,11 @@ export default function AdminDashboardPage() {
   );
 }
 
-type BookingRow = {
-  reference: string;
-  status: BookingStatus;
-  pickup_city: string;
-  delivery_city: string;
-  requested_date: string;
-  is_test: boolean;
-};
-
 async function Dashboard() {
   // Redirects unless the user is an active admin at AAL2; RLS enforces the same in the database.
   const { supabase } = await routeAdminPage("dashboard");
-  const { data, error } = await supabase!
-    .from("bookings")
-    .select("reference, status, pickup_city, delivery_city, requested_date, is_test")
-    .order("submitted_at", { ascending: false })
-    .limit(50);
-  const rows = (data ?? []) as BookingRow[];
+  const { data, error } = await supabase!.from("bookings").select(ADMIN_BOOKING_COLUMNS).order("submitted_at", { ascending: false }).limit(50);
+  const items = ((data ?? []) as AdminBookingRow[]).map(toAdminBookingItem);
 
   return (
     <div className="grid gap-8">
@@ -57,36 +44,10 @@ async function Dashboard() {
         <p role="alert" className="text-danger">
           {t.dashboard.loadFailed}
         </p>
-      ) : rows.length === 0 ? (
+      ) : items.length === 0 ? (
         <p className="rounded-lg border border-line bg-surface p-6 text-fg-muted">{t.dashboard.empty}</p>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-line">
-          <table className="w-full min-w-[36rem] text-left text-sm">
-            <thead className="bg-surface text-fg-subtle">
-              <tr>
-                <th className="px-4 py-3 font-medium">{t.dashboard.reference}</th>
-                <th className="px-4 py-3 font-medium">{t.dashboard.route}</th>
-                <th className="px-4 py-3 font-medium">{t.dashboard.date}</th>
-                <th className="px-4 py-3 font-medium">{t.dashboard.status}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.reference} className="border-t border-line">
-                  <td className="px-4 py-3 font-mono text-fg">
-                    {r.reference}
-                    {r.is_test && <Badge className="ml-2 align-middle font-sans">{ka.booking.test.badge}</Badge>}
-                  </td>
-                  <td className="px-4 py-3 text-fg-muted">
-                    {r.pickup_city} → {r.delivery_city}
-                  </td>
-                  <td className="px-4 py-3 text-fg-muted">{r.requested_date}</td>
-                  <td className="px-4 py-3 text-fg">{t.statuses[r.status] ?? r.status}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <BookingList items={items} />
       )}
     </div>
   );
