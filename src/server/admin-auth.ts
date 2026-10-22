@@ -2,6 +2,7 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { redirect } from "next/navigation";
+import { connection } from "next/server";
 import { adminRedirectFor, decideAdminAccess, type AdminAccess, type AuthLevel } from "@/lib/auth/admin-access";
 import { createSupabaseServerClient, supabaseConfig } from "./supabase";
 
@@ -13,6 +14,9 @@ import { createSupabaseServerClient, supabaseConfig } from "./supabase";
 export type AdminContext = { access: AdminAccess; supabase: SupabaseClient | null; verifiedTotpFactors: number };
 
 export async function getAdminContext(): Promise<AdminContext> {
+  // Admin data is per request and per session: never prerendered. This also keeps
+  // the Supabase client (which reads the clock) out of the prerender pass.
+  await connection();
   const config = supabaseConfig();
   if (!config) return { access: decideAdminAccess(emptyFacts(false)), supabase: null, verifiedTotpFactors: 0 };
 
