@@ -82,7 +82,7 @@ An admin checkbox is **not** proof. `admin_record_price_acceptance` requires all
 | --- | --- | --- |
 | `anon` (browser without a session) | none | none |
 | `authenticated` | `SELECT` only. RLS shows rows only to an **active admin at AAL2**, plus the user's own `admin_users` row. | `admin_*` functions, each starting with `require_admin()` |
-| `service_role` (Next.js server only) | **none**. It bypasses RLS, so grants are its control. | `submit_booking_request`, the notification worker functions, `consume_rate_limit`, `attach_telegram_pairing_code` |
+| `service_role` (Next.js server only) | **none**. It bypasses RLS, so grants are its control. | `submit_booking_request`, the notification worker functions, `consume_rate_limit`. (`attach_telegram_pairing_code` was replaced in 20261022000200 by the admin-session `admin_attach_telegram_pairing_code`; see telegram-setup.md.) |
 
 - Every function has `set search_path = ''` and uses fully qualified names.
   - EXECUTE is revoked from PUBLIC, anon, authenticated and service_role, then granted per function.

@@ -43,6 +43,9 @@ async function Dashboard() {
           <p className="mt-2 max-w-prose text-sm leading-relaxed text-fg-muted">{t.dashboard.lead}</p>
         </div>
         <div className="flex items-center gap-3">
+          <Link href="/admin/telegram" className="text-sm text-fg-muted underline-offset-4 hover:text-fg hover:underline">
+            {t.telegram.link}
+          </Link>
           <Link href="/admin/security" className="text-sm text-fg-muted underline-offset-4 hover:text-fg hover:underline">
             {t.security.link}
           </Link>

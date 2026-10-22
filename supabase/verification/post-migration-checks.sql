@@ -21,16 +21,19 @@ expected_tables(nspname, relname) as (values
   ('public', 'admin_users'), ('public', 'drivers'), ('public', 'bookings'), ('public', 'booking_contacts'),
   ('public', 'booking_status_events'), ('public', 'price_proposals'), ('public', 'price_acceptances'),
   ('public', 'admin_audit_log'), ('driveo_private', 'notification_outbox'), ('driveo_private', 'notification_attempts'),
-  ('driveo_private', 'telegram_pairing_challenges'), ('driveo_private', 'rate_limit_counters')
+  ('driveo_private', 'telegram_pairing_challenges'), ('driveo_private', 'rate_limit_counters'),
+  ('driveo_private', 'telegram_recipients'), ('driveo_private', 'telegram_test_sends')
 ),
 admin_fns(name) as (values
   ('admin_transition_booking'), ('admin_create_price_proposal'), ('admin_mark_proposal_sent'),
   ('admin_record_price_acceptance'), ('admin_retry_notification'), ('admin_notification_history'),
-  ('admin_start_telegram_pairing'), ('admin_verify_telegram_pairing')
+  ('admin_start_telegram_pairing'), ('admin_verify_telegram_pairing'),
+  ('admin_attach_telegram_pairing_code'), ('admin_telegram_status'), ('admin_telegram_send_target'),
+  ('admin_revoke_telegram_recipient'), ('admin_claim_telegram_test_send'), ('admin_complete_telegram_test_send')
 ),
 service_fns(name) as (values
   ('submit_booking_request'), ('claim_notification_events'), ('record_notification_attempt'),
-  ('complete_notification_event'), ('consume_rate_limit'), ('attach_telegram_pairing_code')
+  ('complete_notification_event'), ('consume_rate_limit')
 )
 select 'missing table' as check, e.nspname || '.' || e.relname as detail
 from expected_tables e where not exists (select 1 from our_tables t where t.nspname = e.nspname and t.relname = e.relname)

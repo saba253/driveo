@@ -20,7 +20,14 @@ const PUBLIC_TABLES = [
   "price_acceptances",
   "admin_audit_log",
 ];
-const PRIVATE_TABLES = ["notification_outbox", "notification_attempts", "telegram_pairing_challenges", "rate_limit_counters"];
+const PRIVATE_TABLES = [
+  "notification_outbox",
+  "notification_attempts",
+  "telegram_pairing_challenges",
+  "rate_limit_counters",
+  "telegram_recipients",
+  "telegram_test_sends",
+];
 
 const ADMIN_FUNCTIONS = [
   "admin_transition_booking",
@@ -31,6 +38,12 @@ const ADMIN_FUNCTIONS = [
   "admin_notification_history",
   "admin_start_telegram_pairing",
   "admin_verify_telegram_pairing",
+  "admin_attach_telegram_pairing_code",
+  "admin_telegram_status",
+  "admin_telegram_send_target",
+  "admin_revoke_telegram_recipient",
+  "admin_claim_telegram_test_send",
+  "admin_complete_telegram_test_send",
 ];
 const SERVICE_FUNCTIONS = [
   "submit_booking_request",
@@ -38,7 +51,6 @@ const SERVICE_FUNCTIONS = [
   "record_notification_attempt",
   "complete_notification_event",
   "consume_rate_limit",
-  "attach_telegram_pairing_code",
 ];
 
 const hex = (n: number | string) => String(n).padStart(64, "0");
@@ -619,13 +631,15 @@ describe("persistent rate limit", () => {
 
 /* ------------------------------------------------------------- Telegram pairing */
 
-describe("Telegram pairing challenge (prepared, inactive)", () => {
+describe("Telegram pairing challenge", () => {
   const SESSION = hex("5e55");
   const CODE = hex("c0de");
   const CHAT = hex("c4a7");
   const start = async (actor: Actor = admin, session = SESSION) =>
     (await call(actor, "select public.admin_start_telegram_pairing($1) as id", [session]))[0].id as string;
-  const attach = async (id: string, code = CODE) => (await call(SERVICE, "select public.attach_telegram_pairing_code($1, $2, $3) as ok", [id, code, CHAT]))[0].ok;
+  // The admin's server attaches the code it sent to the private chat (same session).
+  const attach = async (id: string, code = CODE) =>
+    (await call(admin, "select public.admin_attach_telegram_pairing_code($1, $2, $3, $4, 123456789) as ok", [id, SESSION, code, CHAT]))[0].ok;
   const verify = async (id: string, session = SESSION, code = CODE, actor: Actor = admin) =>
     (await call(actor, "select public.admin_verify_telegram_pairing($1, $2, $3) as chat", [id, session, code]))[0].chat;
 
@@ -709,6 +723,8 @@ describe("post-migration check script detects a database without test isolation"
     const query1 = sql.slice(sql.indexOf("-- Query 1"), sql.indexOf("-- Query 2"));
     const old = await createTestDb({ before: "20261022000100" });
     const { rows } = await old.query<{ check: string }>(query1);
-    assert.deepEqual([...new Set(rows.map((r) => r.check))].sort(), ["old submit_booking_request overload still present", "test isolation missing"]);
+    const checks = new Set(rows.map((r) => r.check));
+    assert.ok(checks.has("test isolation missing"));
+    assert.ok(checks.has("old submit_booking_request overload still present"));
   });
 });

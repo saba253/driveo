@@ -2,73 +2,101 @@
 
 DRIVEO — Claude Code development report. Please review the completed work, identify any issues, update the progress tracker, and prepare the next safe development step.
 
-- **Step:** 1.7C.2-B, founder approval (a): development database migration
+- **Step:** 1.7E.1, private Telegram test notification setup (code only; nothing sent)
 - **Date:** 2026-10-22
-- **Code commit:** `f9e679b` (unchanged; no code changes in this step)
+- **Previous:** `2e96b94`
 
-## Completed
+## Implemented
 
-Migration `20261022000100_test_booking_isolation.sql` was applied to the Supabase **development** project `driveo-dev-eu` only, under the founder's explicit approval (a).
+**Founder-only Telegram flow at `/admin/telegram`**
+- Access: active admin at AAL2, rechecked by the server on every action.
+- Gate: shows "not configured" until the founder sets a server-only `TELEGRAM_BOT_TOKEN`.
 
-Pre-checks, all passed:
-1. **Linked project:** the linked project is `driveo-dev-eu`, and it matches the project in `.env.local`.
-2. **SQL review:** every DELETE and UPDATE sits inside function bodies, so none runs during migration. The two dropped constraints are re-created immediately. The old 5-argument `submit_booking_request` is replaced by the 6-argument version, executable by `service_role` only. New columns are added with defaults.
-3. **Dry run:** `db push --linked --dry-run`.
-4. **Pending list:** exactly one pending migration (`20261022000100`), with no seeds and no roles.
+**Pairing**
+- It reuses the existing pairing challenges: session-bound, 10-minute expiry, single use, locked after 5 wrong codes.
+- **Step 1:** the founder opens a deep link `t.me/<bot>?start=<challenge>` and presses Start.
+- **Step 2:** the server polls `getUpdates` only when the founder presses "check". It needs no webhook.
+- **What matches:** only `/start <challenge>` sent from a private chat by a person (`from.id === chat.id`, not a bot, not forwarded), after the challenge started.
+- **Step 3:** the server sends a one-time code to that chat. The founder types it into the same admin session.
+- **What is stored:** only after the code matches does the database store the verified private chat as the admin's single active recipient. The browser never supplies a chat id.
 
-Before the push the remote had 0 bookings, 0 contacts, 0 outbox events and 0 audit entries, 1 admin and 1 auth user.
+**Guards**
+- The bot must have `can_join_groups=false` (BotFather → Allow Groups off).
+- A database CHECK `chat_id > 0`: group and channel ids are negative, so they can never be stored.
 
-## Verification after the migration
+**One-time test message:** the exact approved text.
+- Requires the server flag `TELEGRAM_TEST_SEND=once`, the confirmation checkbox, and Telegram's `getChat` confirming `type=private`.
+- It is claimed in the database before sending, then sent once with no automatic retry.
+- Outcomes: `sent`, `failed` (a 4xx: may be retried manually) or `unknown` (timeout or 5xx). `unknown` blocks re-sending to avoid duplicates.
+- It creates no booking and no outbox event.
 
-- **Migration history:** all 4 migrations recorded remotely and matching local. A second dry run reports "Remote database is up to date".
-- **Security checks:** post-migration Query 1 returned **0 problems** (RLS, owners, grants, search paths, no views, no Realtime exposure, append-only triggers, isolation present, no old function overload).
-- **Live state:**
-  - `bookings.is_test` and `notification_outbox.is_test` exist.
-  - The constraint `(status = 'suppressed_test') = is_test` is active.
-  - `claim_notification_events` skips test events.
-  - `submit_booking_request` takes `p_is_test`, and only `service_role` can execute it; anon and authenticated cannot.
-  - `purge_test_bookings` is not executable by any API role.
-  - 16 RLS policies, unchanged.
-- **No records changed:** 0 bookings, 0 contacts, 0 outbox events, 0 audit entries, 1 active admin, 1 auth user.
-- **Dashboard query:** the dashboard's exact column list now resolves through the API: anonymous gets 401/42501 (permission denied), while a missing column gives 400/42703. The earlier "couldn't load the requests" error should therefore be gone. Founder sign-in is needed to see it.
+**Telegram client:** the official Bot API (`getMe`, `getUpdates`, `getChat`, `sendMessage`), with a 10 s timeout and short error codes only. The token and URLs never appear in errors or logs.
 
-## Not done (not authorized)
+**Founder guide:** in Georgian, in `docs/telegram-setup.md`.
 
-- no test bookings
-- feature flag still off
-- no API secrets created
-- no deletions
-- no other project touched
-- no deployment
+## Database migration (local only, NOT applied)
 
-## Note
+`supabase/migrations/20261022000200_telegram_recipient.sql`:
+- `driveo_private.telegram_recipients` and `telegram_test_sends`, with RLS and no grants
+- a `chat_id` column on pairing challenges
+- admin-session functions for attach, status, send target, revoke, claim and complete test send
+- an updated `admin_verify_telegram_pairing` that records the recipient
+- drops the unused secret-key `attach_telegram_pairing_code`
 
-Each Supabase CLI call printed "Initialising login role", meaning the CLI set up its own temporary connection role.
+**Founder approval is required before applying it to `driveo-dev-eu`.** Until then `/admin/telegram` shows "not configured", so it fails safe.
 
 ## Tests
 
-No code changes, so the previous result stands: TypeScript, lint and build pass, and 313/313 tests pass at `f9e679b`.
+- TypeScript: pass. Lint: pass. Production build: pass.
+- Tests: **331/331 pass**, up from 313.
+  - Telegram API mocked: exact message text, token never in errors, timeout/network behaviour, private-chat-only matching (groups, channels, bots, forwarded messages and wrong tokens rejected), keyed hashes.
+  - PGlite flow with a fake Telegram:
+    - pairing succeeds only from the same session
+    - a bot that may join groups is refused
+    - non-admin and AAL1 sessions are refused
+    - negative chat ids are rejected by the database
+    - the private tables are unreadable by API roles
+    - the test send happens exactly once
+    - `unknown` blocks a re-send, while `failed` allows a manual retry
+    - a non-private chat is refused before claiming
+    - revoking the recipient stops sends
+    - no bookings or outbox events are created
+- Leak scan: no token-shaped strings or Supabase keys in client bundles or tracked files. The only bundle match is the variable *name* in the Georgian help text.
+
+## Remote
+
+No changes. Nothing was sent to Telegram, no remote database writes were made, and no ChatGPT or Chrome automation was used.
+
+## Feature flags
+
+- `BOOKING_SUBMISSIONS`: off
+- `TELEGRAM_TEST_SEND`: off
+- Telegram is not configured (no token)
+- Booking notification worker: not built. Email: not built.
+
+## Dashboard check
+
+NOT VERIFIED. It needs the founder's sign-in.
+- Manual check: run `npm run dev`, then open `http://localhost:3000/admin` and sign in. The empty bookings list should load with no error message.
 
 ## Remaining blockers
 
-- Before the first test booking: founder approval (b), plus the founder creating the dev-only secret key and hash secret locally.
+- Before the Telegram test:
+  - approval to apply migration `20261022000200`
+  - the founder creates the bot (Allow Groups off) and sets the token locally
+  - approval for pairing, which sends one code message
+  - approval for the single test message
+- Still open from before: the first fictional booking test (approval b).
 - Before real customers:
-  - live non-admin and AAL1/AAL2 checks
-  - session expiry and sign-out check
+  - live access checks
   - persistent admin-login limits
   - CAPTCHA
   - approved Terms of Use and Privacy Policy
   - insurance and liability
-  - notification worker
+  - booking notification worker
   - production setup
 
 ## Progress estimate (rough)
 
-- Development MVP: about 72%
-- Production readiness: about 40%
-
-## Recommended next step
-
-1. The founder signs in to `/admin` and confirms the empty bookings list loads.
-2. The founder gives approval (b): write ONE fictional test booking.
-3. The founder follows `docs/booking-submissions.md` §8: dev-only secret key, hash secret, `BOOKING_SUBMISSIONS=test`, restart, one fictional booking, check the dashboard, then turn the flag off and delete the key.
+- Development MVP: about 75%
+- Production readiness: about 42%
