@@ -11,17 +11,18 @@ import { PGlite, type Transaction } from "@electric-sql/pglite";
 
 const ROOT = join(import.meta.dirname, "..");
 
-export function migrationFiles(): string[] {
+/** Migration files in order; `before` keeps only those whose name sorts before it. */
+export function migrationFiles(before?: string): string[] {
   return readdirSync(join(ROOT, "migrations"))
-    .filter((f) => f.endsWith(".sql"))
+    .filter((f) => f.endsWith(".sql") && (!before || f < before))
     .sort()
     .map((f) => join(ROOT, "migrations", f));
 }
 
-export async function createTestDb(): Promise<PGlite> {
+export async function createTestDb(opts: { before?: string } = {}): Promise<PGlite> {
   const db = new PGlite();
   await db.exec(readFileSync(join(ROOT, "tests", "supabase-shim.sql"), "utf8"));
-  for (const file of migrationFiles()) await db.exec(readFileSync(file, "utf8"));
+  for (const file of migrationFiles(opts.before)) await db.exec(readFileSync(file, "utf8"));
   return db;
 }
 

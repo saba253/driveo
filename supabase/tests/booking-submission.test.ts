@@ -74,15 +74,15 @@ describe("booking submission against PostgreSQL", () => {
     assert.equal(res.duplicate, false);
     assert.doesNotMatch(JSON.stringify(res), /ტესტაძე|\+995|სატესტო/);
 
-    const { rows } = await db.query<{ id: string; pricing_mode: string; quote_reference: string | null; eligibility_reasons: string[]; status: string; terms_version: string | null }>(
-      "select id, pricing_mode, quote_reference, eligibility_reasons, status, terms_version from public.bookings where submission_id = $1",
+    const { rows } = await db.query<{ id: string; pricing_mode: string; quote_reference: string | null; is_test: boolean; status: string; terms_version: string | null }>(
+      "select id, pricing_mode, quote_reference, is_test, status, terms_version from public.bookings where submission_id = $1",
       [key],
     );
     assert.equal(rows.length, 1);
     const b = rows[0];
     assert.deepEqual(
-      { mode: b.pricing_mode, quote: b.quote_reference, reasons: b.eligibility_reasons, status: b.status, terms: b.terms_version },
-      { mode: "manual_assessment", quote: null, reasons: ["test_submission"], status: "submitted", terms: null },
+      { mode: b.pricing_mode, quote: b.quote_reference, test: b.is_test, status: b.status, terms: b.terms_version },
+      { mode: "manual_assessment", quote: null, test: true, status: "submitted", terms: null },
     );
     assert.equal(await count("select count(*)::int as n from public.booking_contacts where booking_id = $1", [b.id]), 1);
     assert.equal(await count("select count(*)::int as n from public.booking_status_events where booking_id = $1 and to_status = 'submitted'", [b.id]), 1);
@@ -106,14 +106,14 @@ describe("booking submission against PostgreSQL", () => {
     assert.equal(c[0].phone_e164, "+995599112233");
   });
 
-  test("no notification is sent: the outbox event waits as pending with no attempts", async () => {
+  test("no notification is sent: the test booking's outbox event is suppressed, with no attempts", async () => {
     const key = crypto.randomUUID();
     await submit({ customerPhone: freshPhone() }, { key });
     const { rows } = await db.query<{ status: string; attempts: number; id: string }>(
       "select o.id, o.status, o.attempts from driveo_private.notification_outbox o join public.bookings b on b.id = o.booking_id where b.submission_id = $1",
       [key],
     );
-    assert.deepEqual({ status: rows[0].status, attempts: rows[0].attempts }, { status: "pending", attempts: 0 });
+    assert.deepEqual({ status: rows[0].status, attempts: rows[0].attempts }, { status: "suppressed_test", attempts: 0 });
     assert.equal(await count("select count(*)::int as n from driveo_private.notification_attempts where event_id = $1", [rows[0].id]), 0);
   });
 

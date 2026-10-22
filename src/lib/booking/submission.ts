@@ -90,14 +90,15 @@ export function parseBookingSubmission(raw: unknown, opts: { now: LocalNow; allo
 
 /**
  * Database parameters for public.submit_booking_request. Manual assessment
- * only: no quote, no price. Server decides consent time and markers.
+ * only: no quote, no price. Server decides consent time and the test flag
+ * (passed separately as p_is_test, never inside the client-shaped data).
  */
 export function toStoredSubmission(request: BookingRequest, opts: { consentedAt: Date; test: boolean }) {
   return {
+    isTest: opts.test,
     booking: {
       pricing_mode: "manual_assessment",
-      // Test submissions are marked so the admin can tell them apart (no schema change needed).
-      eligibility_reasons: opts.test ? ["test_submission"] : [],
+      eligibility_reasons: [],
       pickup_city: request.route.pickup.city,
       pickup_address: request.route.pickup.address,
       delivery_city: request.route.delivery.city,

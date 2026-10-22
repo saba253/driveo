@@ -96,13 +96,15 @@ test("stored parameters: manual assessment, no price, server consent time, test 
   const at = new Date("2026-10-22T05:00:00Z");
   const s = toStoredSubmission(r.request, { consentedAt: at, test: true });
   assert.equal(s.booking.pricing_mode, "manual_assessment");
-  assert.deepEqual(s.booking.eligibility_reasons, ["test_submission"]);
+  assert.equal(s.isTest, true);
+  assert.deepEqual(s.booking.eligibility_reasons, []);
+  assert.ok(!("is_test" in s.booking), "the test flag is a separate parameter, not client-shaped data");
   assert.equal(s.booking.consented_at, at.toISOString());
   assert.equal(s.booking.terms_version, null);
   assert.equal(s.booking.privacy_version, null);
   assert.ok(!Object.keys(s.booking).some((k) => /price|amount|quote|status|reference|driver/.test(k)));
   assert.deepEqual(s.contact, { full_name: "ტესტი ტესტაძე", phone_e164: "+995555123456", preferred_contact: "phone" });
-  assert.equal(toStoredSubmission(r.request, { consentedAt: at, test: false }).booking.eligibility_reasons.length, 0);
+  assert.equal(toStoredSubmission(r.request, { consentedAt: at, test: false }).isTest, false);
 });
 
 test("the submission identity ignores server time but not content", () => {

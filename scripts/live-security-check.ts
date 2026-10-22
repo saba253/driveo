@@ -96,7 +96,6 @@ async function testBooking(url: string): Promise<string | null> {
   const service = client(url, secret);
   const booking = {
     pricing_mode: "manual_assessment",
-    eligibility_reasons: ["test_submission"],
     pickup_city: "თბილისი",
     pickup_address: "სატესტო ქუჩა 1 (TEST)",
     delivery_city: "რუსთავი",
@@ -118,6 +117,7 @@ async function testBooking(url: string): Promise<string | null> {
     p_submission_hash: `sha256:${createHash("sha256").update(JSON.stringify({ booking, contact })).digest("hex")}`,
     p_booking: booking,
     p_contact: contact,
+    p_is_test: true,
   };
   const first = await service.rpc("submit_booking_request", params);
   report(!first.error && first.data?.status === "submitted" && first.data?.duplicate === false, "service: manual booking without a quote is accepted", first.error?.code ?? "");

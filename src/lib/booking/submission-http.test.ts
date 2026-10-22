@@ -184,7 +184,12 @@ test("rate limits: per client first, then per phone and overall; an unreachable 
 
 test("rpc adapters map database error codes", async () => {
   const rpcWith = (result: { data: unknown; error: { code: string } | null }): Rpc => async () => result;
-  const input = { submissionId: KEY, submissionHash: "sha256:x", booking: {}, contact: {}, ipHash: null };
+  const input = { submissionId: KEY, submissionHash: "sha256:x", booking: {}, contact: {}, ipHash: null, isTest: true };
+  // The test flag is always sent as its own parameter (fails closed on a database without it).
+  let sent: Record<string, unknown> = {};
+  await createRpcBookingStore(async (_fn, args) => ((sent = args), { data: { reference: "DRV-2026-000003", duplicate: false }, error: null })).submit(input);
+  assert.equal(sent.p_is_test, true);
+  assert.deepEqual(await createRpcBookingStore(rpcWith({ data: null, error: { code: "PGRST202" } })).submit(input), { kind: "failed", code: "PGRST202" });
   assert.deepEqual(await createRpcBookingStore(rpcWith({ data: null, error: { code: "DV002" } })).submit(input), { kind: "conflict" });
   assert.deepEqual(await createRpcBookingStore(rpcWith({ data: null, error: { code: "23514" } })).submit(input), { kind: "rejected_by_database", code: "23514" });
   assert.deepEqual(await createRpcBookingStore(rpcWith({ data: null, error: { code: "42501" } })).submit(input), { kind: "failed", code: "42501" });

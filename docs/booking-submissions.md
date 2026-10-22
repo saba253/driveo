@@ -1,6 +1,6 @@
 # DRIVEO — booking submission foundation (Step 1.7C.1)
 
-Status: **built and tested locally. OFF everywhere.** No booking has been written to any remote database, and the endpoint answers `503` until the server flag is switched on by the founder (§6).
+Status: **built and tested locally. OFF everywhere.** Test-booking isolation added in Step 1.7C.2-A (§6). No booking has been written to any remote database, and the endpoint answers `503` until the server flag is switched on by the founder (§6).
 
 ## 1. Architecture
 
@@ -91,27 +91,85 @@ Responses never echo submitted data and are `Cache-Control: no-store`. Server lo
 - Limits are fixed windows: 10 per client per hour, 5 per phone per day, 200 overall per day.
 - There is no CAPTCHA yet: honeypot, same-origin check, body limits and persistent limits only.
 
-## 6. Next checkpoint: enabling TEST submissions in development
+## 6. Test booking isolation (Step 1.7C.2-A)
 
-**Checkpoint 1.7C.2-A.** It needs the founder's explicit approval to write fictional test bookings to `driveo-dev-eu`. Each test booking stays in the database permanently (history is append-only) and creates one *pending* notification outbox event. No notification is sent, because no worker exists.
+Migration `20261022000100_test_booking_isolation.sql` guarantees at the database level that fictional bookings can never notify anyone:
 
-1. In Project Settings → API Keys → Secret keys, create a new secret key named `local-booking-test`. Add it to `.env.local` yourself as `SUPABASE_SECRET_KEY=…`. Never paste it into chat.
-2. Generate the hash secret straight into `.env.local`, without displaying it, from the project folder:
+- **Flag set by the server only:** `bookings.is_test` and `notification_outbox.is_test`. The API server sets them through `submit_booking_request(..., p_is_test => true)`, as the `service_role`. Browsers and admins cannot call that function at all.
+- **Suppressed at birth:** a test booking's outbox event is created as `suppressed_test`, already completed.
+- **Enforced by a CHECK** (`(status = 'suppressed_test') = is_test`): a test event can never become pending, processing or sent, and a real event can never be suppressed. Admin "retry" only re-queues `failed_all` events, so it can't revive a test event either.
+- **Skipped by the worker claim:** `claim_notification_events` also skips `is_test` events.
+- **Fails closed:** the app **always** sends `p_is_test`. On a database without this migration the function isn't found, the request answers `unavailable`, and nothing is stored. A test booking can therefore never be created on a database that would treat it as real.
+- **Checked by the SQL script:** `post-migration-checks.sql` Query 1 reports "test isolation missing" until the migration is applied.
+- **Visible to the admin:** the dashboard shows test bookings with the **ტესტი** label.
+
+Telegram and email delivery remain unbuilt and disabled.
+
+## 7. Cleanup of fictional test bookings (designed, not executed)
+
+History tables are append-only, so test data can't be removed with ordinary deletes. The migration adds `driveo_private.purge_test_bookings(confirm)`:
+- **Scope:** it deletes, for bookings with `is_test = true` only, their notification attempts, outbox events, price acceptances and proposals, status events, contacts and the bookings themselves, in one transaction.
+- **Audit log:** kept. Their entries stay, plus one `test_booking.purged` summary entry.
+- **Who can run it:** no role can execute it (anon, authenticated, service_role or PUBLIC). Only the database owner can, from the SQL Editor.
+- **How the append-only guard is relaxed:** only DELETE, only for the table owner, only inside the purge transaction, and never for the audit log. UPDATE and TRUNCATE stay forbidden for everyone.
+- **Tests:** real bookings are byte-for-byte unchanged, no orphans remain, the wrong confirmation phrase is refused, other roles are refused even with the purge flag set, and an empty run changes nothing.
+
+**Procedure. Only after separate founder approval; never in production without a new review:**
+1. In the SQL Editor of `driveo-dev-eu`, look first (read-only):
+   ```sql
+   select reference, status, submitted_at from public.bookings where is_test order by submitted_at;
+   select count(*) filter (where is_test) as test, count(*) filter (where not is_test) as real from public.bookings;
+   ```
+2. If the list contains only the fictional bookings you created, run:
+   ```sql
+   select driveo_private.purge_test_bookings('DELETE TEST BOOKINGS');
+   ```
+   The result is the number of test bookings removed.
+3. Run the first query again: no test rows. The real count must be unchanged.
+
+Alternative that keeps everything: cancel each test booking in the dashboard (once status actions exist). They stay labelled ტესტი and are never notified.
+
+## 8. Next checkpoint: the first fictional end-to-end booking
+
+**Checkpoint 1.7C.2-B** needs separate founder approvals for (a) applying migration `20261022000100` to `driveo-dev-eu`, and (b) writing **one** fictional test booking there.
+
+The founder does steps 1 to 7 personally. Never paste a key, password or secret into chat, screenshots or tickets.
+
+1. **Development-only secret key.**
+   1. In the Supabase dashboard, open `driveo-dev-eu` → Project Settings → API Keys → **Secret keys** → **Create new secret key**, and name it `local-booking-test`.
+   2. Copy it once. It starts with `sb_secret_`.
+   3. Don't create it in any other project, and don't reuse it anywhere else.
+2. **Configure `.env.local` safely.**
+   1. Open `C:\Users\sabaa\dev\driver\.env.local` in Notepad or VS Code. Git ignores the file.
+   2. Add `SUPABASE_SECRET_KEY=` followed by the key.
+   3. Keep `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` as they are.
+   4. Never put a value in a variable that starts with `NEXT_PUBLIC_`. The app refuses to run test mode if a secret appears in one.
+   5. Save, and make sure the file name is still exactly `.env.local`.
+3. **Generate `BOOKING_HASH_SECRET` without displaying it.** In a terminal opened in `C:\Users\sabaa\dev\driver`, run this once. It appends a random 64-character value to `.env.local` and prints nothing:
    ```bash
    node -e "require('fs').appendFileSync('.env.local','\nBOOKING_HASH_SECRET='+require('crypto').randomBytes(32).toString('hex')+'\n')"
    ```
-3. Add `BOOKING_SUBMISSIONS=test` to `.env.local` and restart the dev server.
-4. Then verify together:
-   - the form shows the **ტესტი** badge
-   - a fictional booking is received with a reference
-   - a retry is deduplicated
-   - the admin dashboard (AAL2) lists the booking with the ტესტი label
-   - cookie-less API calls are still denied
-5. Afterwards: set `BOOKING_SUBMISSIONS=off` and delete the `local-booking-test` secret key in the dashboard unless more testing is planned.
+4. **Apply the isolation migration.** After approval (a), the assistant can run a dry run that must list only `20261022000100`, then the push. Afterwards, run `post-migration-checks.sql` in the SQL Editor: Query 1 must return no rows.
+5. **Enable test mode locally.**
+   1. Add `BOOKING_SUBMISSIONS=test` to `.env.local` and save.
+   2. Restart the dev server.
+   3. The homepage form now shows the **ტესტი** badge and the "fictional data only" note. If it still shows პროტოტიპი, a value is missing or wrong, and nothing can be sent.
+6. **Send exactly one fictional booking.** Fill in the homepage form with invented data only:
+   - Name: `ტესტი ტესტაძე`
+   - Phone: `555 00 00 01`
+   - Addresses: `სატესტო ქუჩა 1` → `სატესტო გამზირი 2`
+   - Cities: თბილისი → რუსთავი
+   - Date: any day next week
+   - Vehicle: `TEST` / `TEST`
 
-Before notifications are built, the pending outbox events of test bookings must be closed. Recommended: the admin cancels the test bookings, and the notification worker skips bookings marked `test_submission`.
+   Then press **მოთხოვნის გაგზავნა** once. The success screen must show a `DRV-2026-…` reference and «მოთხოვნა მიღებულია — ეს არ ნიშნავს შეკვეთის დადასტურებას.»
+7. **Find it in the Admin Dashboard.** Open `http://localhost:3000/admin`, sign in with your password and TOTP, and check that the reference appears with status **მიღებული** and the **ტესტი** label.
+8. **Disable test mode again.**
+   1. Set `BOOKING_SUBMISSIONS=off` in `.env.local` and restart the dev server. The form returns to პროტოტიპი, and `POST /api/bookings` answers 503.
+   2. In API Keys, **delete** the `local-booking-test` secret key, then remove the `SUPABASE_SECRET_KEY` line from `.env.local`. Keep `BOOKING_HASH_SECRET`, or delete it too; it's only used for rate-limit hashing.
+9. Optional, separate approval: clean up with §7.
 
-## 7. Review: `scripts/live-security-check.ts`
+## 9. Review: `scripts/live-security-check.ts`
 
 This script is not run by `npm test`, and only by the founder, against the development project.
 
@@ -128,7 +186,7 @@ This script is not run by `npm test`, and only by the founder, against the devel
 3. **Verifying the TOTP code signs the founder out of all other sessions** (Supabase behaviour), including any open admin browser tab.
 4. **It ends with a global sign-out**, which revokes all of the founder's refresh tokens.
 5. The `consume_rate_limit` probes are denied. If a grant were wrong, one counter row (`live.check:…`) would be written.
-6. `--with-test-booking` writes **one permanent fictional booking** with contact, status event, audit entry and a pending outbox event, through the secret key directly rather than through `/api/bookings`. It is marked `test_submission`.
+6. `--with-test-booking` writes **one permanent fictional booking** with contact, status event and audit entry, through the secret key directly rather than through `/api/bookings`. It passes `p_is_test => true`, so it is flagged as a test booking and its outbox event is suppressed. It also needs migration `20261022000100`.
 7. `--expect-inactive-admin` needs the founder to deactivate and later reactivate their admin row in the SQL Editor.
 
 **Limitations:**
@@ -139,7 +197,7 @@ This script is not run by `npm test`, and only by the founder, against the devel
 - `/api/bookings` is not exercised.
 - "Admin AAL2 can read bookings" also passes with zero rows, so it only proves the read is allowed unless a test booking exists.
 
-## 8. Outstanding blockers before real customer submissions
+## 10. Outstanding blockers before real customer submissions
 
 | Blocker | Status |
 | --- | --- |
@@ -151,5 +209,6 @@ This script is not run by `npm test`, and only by the founder, against the devel
 | Approved Terms of Use and Privacy Policy, with consent checkboxes and stored versions | Open. Live mode cannot exist without them. |
 | Insurance and liability requirements | Open: founder decision and legal |
 | Notification setup (Telegram private chat, email fallback, worker) | Open: not built |
-| Founder approval for enabling **test** submissions in development | Pending: checkpoint §6 |
+| Test-booking notification isolation | **Built** (§6); must be applied to `driveo-dev-eu` |
+| Founder approval for enabling **test** submissions in development | Pending: checkpoint §8 |
 | Production mode for submissions | Not implemented on purpose |

@@ -99,6 +99,18 @@ select 'append-only trigger missing', x.tbl
 from (values ('public.booking_status_events'), ('public.admin_audit_log'), ('public.price_acceptances'),
              ('driveo_private.notification_attempts')) as x(tbl)
 where not exists (select 1 from pg_trigger tg where tg.tgrelid = x.tbl::regclass and tg.tgname like '%append_only' and tg.tgenabled = 'O')
+union all
+-- Test booking isolation (migration 20261022000100) must be present before test mode is used.
+select 'test isolation missing', 'constraint outbox_test_events_suppressed'
+where not exists (select 1 from pg_constraint where conname = 'outbox_test_events_suppressed')
+union all
+select 'test isolation missing', 'submit_booking_request(p_is_test)'
+where not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                  where n.nspname = 'public' and p.proname = 'submit_booking_request' and 'p_is_test' = any (p.proargnames))
+union all
+select 'old submit_booking_request overload still present', 'public.submit_booking_request (5 arguments)'
+where exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+              where n.nspname = 'public' and p.proname = 'submit_booking_request' and p.pronargs = 5)
 order by 1, 2;
 
 -- Query 2 — information (review, no fixed expectation)
@@ -114,4 +126,4 @@ select 'pg_graphql installed', coalesce((select extversion from pg_extension whe
 union all
 select 'admin_users rows (active)', (select count(*)::text from public.admin_users where is_active)
 union all
-select 'bookings rows', (select count(*)::text from public.bookings);
+select 'bookings rows (test / total)', (select count(*) filter (where is_test)::text || ' / ' || count(*)::text from public.bookings);

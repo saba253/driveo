@@ -33,6 +33,8 @@ export interface BookingStore {
     booking: Record<string, unknown>;
     contact: Record<string, unknown>;
     ipHash: string | null;
+    /** Fictional TEST booking: its notification event is suppressed by the database. */
+    isTest: boolean;
   }): Promise<StoreResult>;
 }
 
@@ -50,13 +52,16 @@ const INPUT_REJECTION_CODES = new Set(["DV001", "23502", "23514", "22P02", "2200
 
 export function createRpcBookingStore(rpc: Rpc): BookingStore {
   return {
-    async submit({ submissionId, submissionHash, booking, contact, ipHash }) {
+    async submit({ submissionId, submissionHash, booking, contact, ipHash, isTest }) {
+      // p_is_test is always sent: a database without test isolation (migration
+      // 20261022000100) has no such parameter, so the call fails and nothing is stored.
       const { data, error } = await rpc("submit_booking_request", {
         p_submission_id: submissionId,
         p_submission_hash: submissionHash,
         p_booking: booking,
         p_contact: contact,
         p_ip_hash: ipHash,
+        p_is_test: isTest,
       });
       if (error) {
         const code = error.code ?? "unknown";
@@ -151,6 +156,7 @@ export function createBookingSubmissionService(deps: {
           booking: stored.booking,
           contact: stored.contact,
           ipHash: ipKey,
+          isTest: stored.isTest,
         });
 
         switch (result.kind) {

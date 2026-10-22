@@ -22,7 +22,7 @@ type BookingRow = {
   pickup_city: string;
   delivery_city: string;
   requested_date: string;
-  eligibility_reasons: string[];
+  is_test: boolean;
 };
 
 async function Dashboard() {
@@ -30,7 +30,7 @@ async function Dashboard() {
   const { supabase } = await routeAdminPage("dashboard");
   const { data, error } = await supabase!
     .from("bookings")
-    .select("reference, status, pickup_city, delivery_city, requested_date, eligibility_reasons")
+    .select("reference, status, pickup_city, delivery_city, requested_date, is_test")
     .order("submitted_at", { ascending: false })
     .limit(50);
   const rows = (data ?? []) as BookingRow[];
@@ -72,7 +72,7 @@ async function Dashboard() {
                 <tr key={r.reference} className="border-t border-line">
                   <td className="px-4 py-3 font-mono text-fg">
                     {r.reference}
-                    {r.eligibility_reasons?.includes("test_submission") && <Badge className="ml-2 align-middle font-sans">{ka.booking.test.badge}</Badge>}
+                    {r.is_test && <Badge className="ml-2 align-middle font-sans">{ka.booking.test.badge}</Badge>}
                   </td>
                   <td className="px-4 py-3 text-fg-muted">
                     {r.pickup_city} → {r.delivery_city}

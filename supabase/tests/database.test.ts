@@ -700,3 +700,15 @@ describe("post-migration check script", () => {
     }
   });
 });
+
+describe("post-migration check script detects a database without test isolation", () => {
+  test("query 1 reports the missing migration", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const sql = readFileSync(join(import.meta.dirname, "..", "verification", "post-migration-checks.sql"), "utf8");
+    const query1 = sql.slice(sql.indexOf("-- Query 1"), sql.indexOf("-- Query 2"));
+    const old = await createTestDb({ before: "20261022000100" });
+    const { rows } = await old.query<{ check: string }>(query1);
+    assert.deepEqual([...new Set(rows.map((r) => r.check))].sort(), ["old submit_booking_request overload still present", "test isolation missing"]);
+  });
+});

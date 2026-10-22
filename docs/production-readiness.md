@@ -118,4 +118,4 @@ The schema, RLS, privileged functions and the admin sign-in with TOTP flow are p
 
 ## 12. Booking submissions (Step 1.7C.1)
 
-`POST /api/bookings` and the form's submission states exist but are **off**: `BOOKING_SUBMISSIONS` defaults to `off`, and its only other value, `test`, is refused in production. See [booking-submissions.md](booking-submissions.md) §8 for the blockers before real customers can submit: approved Terms and Privacy Policy, bot protection, notifications, the live access checks, and insurance and liability.
+`POST /api/bookings` and the form's submission states exist but are **off**: `BOOKING_SUBMISSIONS` defaults to `off`, and its only other value, `test`, is refused in production. See [booking-submissions.md](booking-submissions.md) §10 for the blockers before real customers can submit: approved Terms and Privacy Policy, bot protection, notifications, the live access checks, and insurance and liability.
