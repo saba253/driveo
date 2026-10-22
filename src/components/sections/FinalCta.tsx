@@ -18,8 +18,9 @@ export function FinalCta() {
           <div aria-hidden="true" className="absolute inset-x-12 top-0 h-px bg-linear-to-r from-transparent via-accent/50 to-transparent" />
 
           <p className="text-sm font-medium text-accent">{t.eyebrow}</p>
-          <h2 id="cta-title" className="mx-auto mt-4 max-w-2xl text-h1 font-bold">
-            {t.title}
+          <h2 id="cta-title" className="mx-auto mt-4 max-w-3xl text-h1 font-bold">
+            <span className="block text-balance">{t.title}</span>
+            <span className="block text-balance text-accent">{t.titleAccent}</span>
           </h2>
           <p className="mx-auto mt-4 max-w-xl text-lead text-fg-muted">{t.text}</p>
           <ButtonLink href="#booking" size="lg" className="mt-8 w-full sm:w-auto">
