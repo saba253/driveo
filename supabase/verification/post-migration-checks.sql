@@ -33,7 +33,8 @@ admin_fns(name) as (values
 ),
 service_fns(name) as (values
   ('submit_booking_request'), ('claim_notification_events'), ('record_notification_attempt'),
-  ('complete_notification_event'), ('consume_rate_limit')
+  ('complete_notification_event'), ('consume_rate_limit'),
+  ('worker_telegram_recipient'), ('claim_booking_notifications')
 )
 select 'missing table' as check, e.nspname || '.' || e.relname as detail
 from expected_tables e where not exists (select 1 from our_tables t where t.nspname = e.nspname and t.relname = e.relname)

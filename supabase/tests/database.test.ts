@@ -51,6 +51,8 @@ const SERVICE_FUNCTIONS = [
   "record_notification_attempt",
   "complete_notification_event",
   "consume_rate_limit",
+  "worker_telegram_recipient",
+  "claim_booking_notifications",
 ];
 
 const hex = (n: number | string) => String(n).padStart(64, "0");
