@@ -9,10 +9,11 @@ import type { PGlite } from "@electric-sql/pglite";
 import type { TelegramApi, TelegramResult, TelegramUpdate } from "../../src/lib/telegram/api.ts";
 import { TELEGRAM_TEST_MESSAGE } from "../../src/lib/telegram/messages.ts";
 import { startToken } from "../../src/lib/telegram/pairing.ts";
+import { FAKE_BOT_TOKEN } from "../../src/lib/telegram/test-fixtures.ts";
 import { createTelegramAdminService, type AdminRpc } from "../../src/lib/telegram/service.ts";
 import { ANON, as, createTestDb, createUser, q, SERVICE, sqlState, user, type Actor } from "./db.ts";
 
-const TOKEN = "123456789:AAFakeTokenForTestsOnly_abcdefghijklmn";
+const TOKEN = FAKE_BOT_TOKEN;
 const FOUNDER_CHAT = 555000111;
 
 function rpcAs(db: PGlite, actor: Actor): AdminRpc {

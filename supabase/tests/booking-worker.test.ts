@@ -11,7 +11,7 @@ import type { TelegramApi, TelegramResult } from "../../src/lib/telegram/api.ts"
 import { as, createTestDb, createUser, q, SERVICE, sqlState, submission } from "./db.ts";
 
 const CHAT = 555000111;
-const TOKEN_SHAPE = /\d{6,12}:AA/;
+const TOKEN_SHAPE = /\d{6,12}:[A-Za-z0-9_-]{20,}/;
 
 function serviceRpc(db: PGlite): ServiceRpc {
   return async (fn, args) => {

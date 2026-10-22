@@ -4,9 +4,10 @@ import { createTelegramApi, definitelyNotDelivered, type TelegramUpdate } from "
 import { readTelegramSettings } from "./config.ts";
 import { TELEGRAM_TEST_MESSAGE, pairingCodeMessage } from "./messages.ts";
 import { deepLink, findPairingStart, keyedHash, nextOffset, pairingCode, startToken } from "./pairing.ts";
+import { FAKE_BOT_TOKEN, OTHER_FAKE_BOT_TOKEN } from "./test-fixtures.ts";
 
 // Fictional token in the right format (not a real bot).
-const TOKEN = "123456789:AAFakeTokenForTestsOnly_abcdefghijklmn";
+const TOKEN = FAKE_BOT_TOKEN;
 
 test("settings: off without a token, refused for malformed tokens, in production, or in a NEXT_PUBLIC_ variable", () => {
   assert.deepEqual(readTelegramSettings({}), { ok: false, reason: "missing" });
@@ -52,7 +53,7 @@ test("api: calls the official endpoint once, and never puts the token in an erro
   const e = await refused.sendMessage(42, "hi");
   assert.deepEqual(e, { ok: false, kind: "api_error", status: 403, code: "telegram_403" });
   assert.ok(!e.ok && definitelyNotDelivered(e));
-  assert.doesNotMatch(JSON.stringify(e), /AAFake|blocked|api\.telegram/);
+  assert.doesNotMatch(JSON.stringify(e), /TEST-ONLY|blocked|api\.telegram/);
 
   const server = createTelegramApi({ token: TOKEN, fetch: fakeFetch(() => new Response("oops", { status: 502 })).f });
   const s = await server.sendMessage(42, "hi");
@@ -126,6 +127,6 @@ test("pairing: deep links, codes and keyed hashes", () => {
   assert.match(pairingCode(), /^\d{6}$/);
   const h = keyedHash(TOKEN, "chat", "555000111");
   assert.match(h, /^[0-9a-f]{64}$/);
-  assert.notEqual(h, keyedHash("987654321:AAOtherFakeTokenForTests_abcdefghij", "chat", "555000111"));
+  assert.notEqual(h, keyedHash(OTHER_FAKE_BOT_TOKEN, "chat", "555000111"));
   assert.notEqual(h, keyedHash(TOKEN, "session", "555000111"));
 });

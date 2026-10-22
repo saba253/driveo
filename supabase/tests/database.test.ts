@@ -8,6 +8,7 @@ import { before, describe, test } from "node:test";
 import assert from "node:assert/strict";
 import type { PGlite } from "@electric-sql/pglite";
 import { TRANSITION_RULES } from "../../src/lib/booking/lifecycle.ts";
+import { TOKEN_SHAPED_TEXT } from "../../src/lib/telegram/test-fixtures.ts";
 import { ANON, SERVICE, bookingId, createTestDb, createUser, hash, q, sqlState, submission, submit, user, type Actor } from "./db.ts";
 
 const PUBLIC_TABLES = [
@@ -622,7 +623,7 @@ describe("notification outbox", () => {
     const { rows } = await db.query<{ id: string }>("select id from driveo_private.notification_outbox where booking_id = $1", [b.id]);
     await assert.rejects(attempt(rows[0].id, "telegram", "failed", "x"), sqlState("DV007"));
     const ev = await claimOwn(b.reference);
-    for (const summary of ["see https://api.telegram.org/bot123/sendMessage", "token 123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw", "customer +995 555 00 01 11"])
+    for (const summary of ["see https://api.telegram.org/bot123/sendMessage", `token ${TOKEN_SHAPED_TEXT}`, "customer +995 555 00 01 11"])
       await assert.rejects(attempt(ev, "telegram", "failed", "telegram_error", summary), sqlState("23514"), summary);
   });
 });

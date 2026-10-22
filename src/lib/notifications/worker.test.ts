@@ -3,12 +3,13 @@ import assert from "node:assert/strict";
 import { backoffSeconds, classifyFailure, createBookingNotificationWorker, WORKER_LIMITS } from "./booking-worker.ts";
 import { handleWorkerRun } from "./worker-http.ts";
 import { readWorkerSettings } from "./worker-settings.ts";
+import { FAKE_BOT_TOKEN } from "../telegram/test-fixtures.ts";
 
 const ENV = {
   BOOKING_NOTIFICATIONS: "telegram",
   SUPABASE_URL: "https://abcdefghijklmnopqrst.supabase.co",
   SUPABASE_SECRET_KEY: "sb_secret_fixture_not_real",
-  TELEGRAM_BOT_TOKEN: "123456789:AAFakeTokenForTestsOnly_abcdefghijklmn",
+  TELEGRAM_BOT_TOKEN: FAKE_BOT_TOKEN,
   NOTIFICATIONS_WORKER_SECRET: "w".repeat(40),
 };
 
