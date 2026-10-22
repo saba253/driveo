@@ -2,103 +2,73 @@
 
 DRIVEO — Claude Code development report. Please review the completed work, identify any issues, update the progress tracker, and prepare the next safe development step.
 
-- **Step:** 1.7C.2-A, Test Booking Safety Preparation
+- **Step:** 1.7C.2-B, founder approval (a): development database migration
 - **Date:** 2026-10-22
-- **Commit:** `d0df5dc` (pushed to `origin/main`; local and remote match, working tree clean)
-- **Previous:** `e2c5f46` (Step 1.7C.1)
+- **Code commit:** `f9e679b` (unchanged; no code changes in this step)
 
 ## Completed
 
-Reviewed:
-- `POST /api/bookings`
-- the `BOOKING_SUBMISSIONS` flag
-- the submission service
-- `submit_booking_request`
-- the admin bookings list
-- the notification outbox
-- `docs/booking-submissions.md`
+Migration `20261022000100_test_booking_isolation.sql` was applied to the Supabase **development** project `driveo-dev-eu` only, under the founder's explicit approval (a).
 
-Admin authentication and MFA were not modified.
+Pre-checks, all passed:
+1. **Linked project:** the linked project is `driveo-dev-eu`, and it matches the project in `.env.local`.
+2. **SQL review:** every DELETE and UPDATE sits inside function bodies, so none runs during migration. The two dropped constraints are re-created immediately. The old 5-argument `submit_booking_request` is replaced by the 6-argument version, executable by `service_role` only. New columns are added with defaults.
+3. **Dry run:** `db push --linked --dry-run`.
+4. **Pending list:** exactly one pending migration (`20261022000100`), with no seeds and no roles.
 
-## Security issue found and fixed
+Before the push the remote had 0 bookings, 0 contacts, 0 outbox events and 0 audit entries, 1 admin and 1 auth user.
 
-**Issue:** fictional test bookings were marked only in `bookings.eligibility_reasons`. Their notification outbox events were created as `pending`, and `claim_notification_events` would have handed them to a future Telegram or email worker.
+## Verification after the migration
 
-**Fix:** migration `supabase/migrations/20261022000100_test_booking_isolation.sql`.
-- New columns `bookings.is_test` and `notification_outbox.is_test`. Only the server sets them, through `submit_booking_request(..., p_is_test)`, which only `service_role` can execute.
-- A test booking's outbox event is created as `suppressed_test`, already completed.
-- A CHECK constraint `(status = 'suppressed_test') = is_test`: a test event can never be pending, processing or sent, and a real event can never be suppressed.
-- `claim_notification_events` also skips `is_test` events.
-- **Fails closed:** the app always sends `p_is_test`. On a database without this migration the call fails, nothing is stored, and the response is `unavailable`.
-- **Cleanup:** `driveo_private.purge_test_bookings('DELETE TEST BOOKINGS')`. It can be run only by the owner (no role has execute) and only from the SQL Editor. It removes test bookings and all their dependent rows in one transaction, keeps real records, and keeps the audit log, adding one summary entry. It has been designed and tested but not run anywhere.
-- The post-migration SQL check now reports when this migration is missing.
-- The admin dashboard labels test bookings from `is_test`.
-- The live-check script's optional test booking uses `p_is_test`.
+- **Migration history:** all 4 migrations recorded remotely and matching local. A second dry run reports "Remote database is up to date".
+- **Security checks:** post-migration Query 1 returned **0 problems** (RLS, owners, grants, search paths, no views, no Realtime exposure, append-only triggers, isolation present, no old function overload).
+- **Live state:**
+  - `bookings.is_test` and `notification_outbox.is_test` exist.
+  - The constraint `(status = 'suppressed_test') = is_test` is active.
+  - `claim_notification_events` skips test events.
+  - `submit_booking_request` takes `p_is_test`, and only `service_role` can execute it; anon and authenticated cannot.
+  - `purge_test_bookings` is not executable by any API role.
+  - 16 RLS policies, unchanged.
+- **No records changed:** 0 bookings, 0 contacts, 0 outbox events, 0 audit entries, 1 active admin, 1 auth user.
+- **Dashboard query:** the dashboard's exact column list now resolves through the API: anonymous gets 401/42501 (permission denied), while a missing column gives 400/42703. The earlier "couldn't load the requests" error should therefore be gone. Founder sign-in is needed to see it.
 
-Telegram and email delivery remain unbuilt and disabled.
+## Not done (not authorized)
+
+- no test bookings
+- feature flag still off
+- no API secrets created
+- no deletions
+- no other project touched
+- no deployment
+
+## Note
+
+Each Supabase CLI call printed "Initialising login role", meaning the CLI set up its own temporary connection role.
 
 ## Tests
 
-- TypeScript: pass
-- Lint: pass
-- Production build: pass
-- Unit and integration tests: **313/313 pass**
-  - New tests: suppression; claim exclusion; constraint enforcement; admin retry refused; test/real key switching gives a conflict; anon and admins cannot submit; fail-closed on a database without the migration; purge (complete removal, real rows unchanged, audit kept, wrong phrase refused, other roles refused, no-op when empty); the check script detects the missing migration.
-  - Writes went to local PGlite databases only.
-- Client bundle scan: no secret key, publishable key, project ref or hash secret.
-
-## Live-test prerequisites
-
-| Check | Status |
-| --- | --- |
-| `BOOKING_SUBMISSIONS=off` by default (not set locally) | PASS |
-| Test mode impossible in production | PASS |
-| No real pricing in test mode (manual assessment forced; extra fields rejected; DB refuses automatic quotes) | PASS |
-| Fictional data accepted | PASS |
-| Rollback and idempotency intact | PASS |
-| No secrets in the browser | PASS |
-| No existing customer records modified (remote had 0 bookings at the last read-only check) | PASS |
-| Test-notification isolation on the remote dev database | NOT VERIFIED: migration not applied yet |
-| Reference and status visible to the founder admin | NOT VERIFIED: needs one test booking |
-
-## Remote database
-
-**No changes.** Migration `20261022000100` has **not** been applied to the development project. No test booking has been written. No remote connection was made in this step.
-
-## Feature flag
-
-`BOOKING_SUBMISSIONS` is **off** (not set in `.env.local`). No secret key and no hash secret are configured locally.
+No code changes, so the previous result stands: TypeScript, lint and build pass, and 313/313 tests pass at `f9e679b`.
 
 ## Remaining blockers
 
-- Before the first test booking: founder approvals.
+- Before the first test booking: founder approval (b), plus the founder creating the dev-only secret key and hash secret locally.
 - Before real customers:
   - live non-admin and AAL1/AAL2 checks
   - session expiry and sign-out check
-  - persistent rate limits for admin login
-  - CAPTCHA / bot protection
-  - approved Terms of Use and Privacy Policy, with consent checkboxes
+  - persistent admin-login limits
+  - CAPTCHA
+  - approved Terms of Use and Privacy Policy
   - insurance and liability
-  - Telegram and email notification worker
-  - production configuration
+  - notification worker
+  - production setup
 
 ## Progress estimate (rough)
 
-- Development MVP: about 65–70%
+- Development MVP: about 72%
 - Production readiness: about 40%
 
-## Recommended next step: checkpoint 1.7C.2-B
+## Recommended next step
 
-It needs two separate founder approvals:
-- (a) apply migration `20261022000100` to the development project: dry run first, then the post-migration checks
-- (b) write ONE fictional test booking
-
-Then the founder follows `docs/booking-submissions.md` §8:
-1. Create a dev-only secret key `local-booking-test`.
-2. Add it and a generated `BOOKING_HASH_SECRET` to `.env.local` locally.
-3. Enable `BOOKING_SUBMISSIONS=test` and restart.
-4. Send one fictional booking.
-5. Find it in the admin dashboard (ტესტი label).
-6. Turn the flag off and delete the key.
-
-Cleanup is in §7 and needs separate approval.
+1. The founder signs in to `/admin` and confirms the empty bookings list loads.
+2. The founder gives approval (b): write ONE fictional test booking.
+3. The founder follows `docs/booking-submissions.md` §8: dev-only secret key, hash secret, `BOOKING_SUBMISSIONS=test`, restart, one fictional booking, check the dashboard, then turn the flag off and delete the key.
