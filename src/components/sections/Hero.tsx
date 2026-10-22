@@ -14,7 +14,9 @@ export function Hero() {
       <HeroVisual />
 
       <Container className="grid gap-10 pt-12 pb-16 sm:pt-20 sm:pb-20 lg:min-h-[min(calc(100svh-4.5rem),60rem)] lg:grid-cols-[minmax(0,1fr)_minmax(0,28rem)] lg:items-center lg:gap-14 lg:py-14 xl:grid-cols-[minmax(0,1fr)_30rem] xl:gap-20">
-        <div className="min-w-0 max-w-2xl">
+        {/* Desktop only: lift the text group 38px so it sits level with the booking card.
+            A transform leaves the grid untouched, so the card does not move. */}
+        <div className="min-w-0 max-w-2xl lg:-translate-y-9.5">
           <p className="flex animate-rise items-center gap-3 text-sm font-medium text-fg-muted">
             <span className="h-px w-8 bg-accent" aria-hidden="true" />
             {t.eyebrow}
