@@ -30,10 +30,11 @@ export function Service() {
             {t.useCases.map((item) => (
               <li
                 key={item.title}
-                className="reveal grid grid-cols-[1.25rem_minmax(0,1fr)] gap-x-4 border-t border-line py-7 last:border-b sm:grid-cols-[2rem_minmax(0,1fr)] sm:py-8"
+                className="reveal grid grid-cols-[20px_minmax(0,1fr)] gap-x-[16px] border-t border-line py-7 last:border-b sm:grid-cols-[32px_minmax(0,1fr)] sm:py-8"
               >
-                {/* A plain marker: these are independent use cases, not steps, so no 01 / 02 / 03. */}
-                <span className="mt-2.5 block h-px w-5 bg-accent sm:w-6" aria-hidden="true" />
+                {/* A plain marker: these are independent use cases, not steps, so no 01 / 02 / 03.
+                    Column, gap and marker in px, so enlarged text keeps the width for words. */}
+                <span className="mt-2.5 block h-px w-[20px] bg-accent sm:w-[24px]" aria-hidden="true" />
                 <div className="min-w-0">
                   <h4 className="text-h3 font-semibold">{item.title}</h4>
                   <p className="mt-2 text-fg-muted">{item.text}</p>

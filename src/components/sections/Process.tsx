@@ -20,21 +20,22 @@ export function Process() {
           {t.steps.map((step, i) => {
             const last = i === t.steps.length - 1;
             return (
+              // Marker column and gap in px (48/20, as before), so enlarged text keeps the width for words.
               <li
                 key={step.title}
-                className="reveal relative grid grid-cols-[3rem_minmax(0,1fr)] gap-x-5 pb-10 last:pb-0 md:block md:pb-0"
+                className="reveal relative grid grid-cols-[48px_minmax(0,1fr)] gap-x-[20px] pb-10 last:pb-0 md:block md:pb-0"
               >
                 {/* Connector to the next step */}
                 {!last && (
                   <span
                     aria-hidden="true"
-                    className="absolute top-14 bottom-2 left-6 w-px bg-linear-to-b from-line-strong to-line md:top-6 md:-right-6 md:bottom-auto md:left-16 lg:-right-10 md:h-px md:w-auto md:bg-linear-to-r"
+                    className="absolute top-[56px] bottom-2 left-[24px] w-px bg-linear-to-b from-line-strong to-line md:top-6 md:-right-6 md:bottom-auto md:left-16 lg:-right-10 md:h-px md:w-auto md:bg-linear-to-r"
                   />
                 )}
                 <span
                   aria-hidden="true"
                   className={cn(
-                    "relative grid size-12 place-items-center rounded-full font-brand text-sm font-bold tabular-nums",
+                    "relative grid size-[48px] place-items-center rounded-full font-brand text-sm font-bold tabular-nums",
                     last ? "bg-accent text-accent-ink shadow-glow" : "border border-line-strong bg-canvas text-fg",
                   )}
                 >

@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { hasDraftData } from "@/lib/booking/draft-storage";
 import { HONEYPOT_FIELD } from "@/lib/booking/submission-contract";
 import { Badge } from "@/components/ui/Badge";
-import { Button } from "@/components/ui/Button";
+import { Button, buttonStyles } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { ka } from "@/content/ka";
 import { STAGE_FIELDS, type FormStage, type ValidationErrors } from "@/lib/booking/validation";
@@ -98,6 +99,14 @@ export function BookingCard({ className, mode = "prototype" }: { className?: str
   const stepNumber = stage === "done" || stage === "received" ? null : STEP_NUMBER[stage];
   const primaryLabel = editingFromReview ? t.backToReview : stage === "contact" ? t.toReview : t.next;
   const showBack = (stage === "vehicle" || stage === "contact") && !editingFromReview;
+  const showRestart = stepNumber !== null && !submitting && hasDraftData(form.draft);
+
+  const onRestart = () => {
+    const wasFirstStage = stage === "route";
+    go(form.restart);
+    // Already on the first stage, so the stage-change effect will not move focus.
+    if (wasFirstStage) headingRef.current?.focus();
+  };
 
   return (
     <section
@@ -138,6 +147,15 @@ export function BookingCard({ className, mode = "prototype" }: { className?: str
           {stepNumber && <span className="text-sm font-medium text-fg-subtle">{`${t.progress(stepNumber, TOTAL_STEPS)} · `}</span>}
           {t.stages[stage]}
         </h3>
+        {/* Present from the first render, so the restore message is announced when it appears. */}
+        <div role="status">
+          {form.restored && (
+            <p className="mt-3 flex items-start gap-2 text-sm leading-relaxed text-fg-muted">
+              <Icon name="check" size={16} className="mt-0.5 shrink-0 text-accent" />
+              <span className="min-w-0">{t.draft.restored}</span>
+            </p>
+          )}
+        </div>
       </div>
 
       <p role="status" aria-live="polite" className="sr-only">
@@ -203,6 +221,8 @@ export function BookingCard({ className, mode = "prototype" }: { className?: str
           </>
         )}
 
+        {showRestart && <RestartDraft onConfirm={onRestart} />}
+
         {stage === "received" && form.submission.kind === "received" && (
           <div className="space-y-5">
             <StatusNotice tone="accent" title={t.received.title} text={ka.requestStatus.submitted} />
@@ -239,6 +259,69 @@ export function BookingCard({ className, mode = "prototype" }: { className?: str
         <p className="mt-3 text-center text-sm leading-relaxed text-fg-subtle">{mode === "test" ? t.test.note : t.prototypeNote}</p>
       )}
     </section>
+  );
+}
+
+/**
+ * "Start over" for an unfinished draft. Asks first, inline: focus moves to the safe
+ * "cancel" choice, Escape cancels, and cancelling returns focus to the trigger.
+ */
+function RestartDraft({ onConfirm }: { onConfirm: () => void }) {
+  const [confirming, setConfirming] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const opened = useRef(false);
+  const id = useId();
+
+  useEffect(() => {
+    if (confirming) {
+      opened.current = true;
+      cancelRef.current?.focus();
+    } else if (opened.current) {
+      triggerRef.current?.focus();
+    }
+  }, [confirming]);
+
+  if (!confirming) {
+    return (
+      <div className="mt-4 text-center">
+        <button
+          ref={triggerRef}
+          type="button"
+          onClick={() => setConfirming(true)}
+          className="inline-flex min-h-11 items-center rounded-md px-3 text-sm font-medium text-fg-muted underline-offset-4 transition-colors hover:text-fg hover:underline"
+        >
+          {t.draft.restart}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      role="group"
+      aria-labelledby={`${id}-title`}
+      aria-describedby={`${id}-text`}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") setConfirming(false);
+      }}
+      className="mt-4 rounded-lg border border-line-strong bg-canvas/50 p-4"
+    >
+      <p id={`${id}-title`} className="font-semibold text-fg">
+        {t.draft.confirmTitle}
+      </p>
+      <p id={`${id}-text`} className="mt-1 text-[0.9375rem] leading-relaxed text-fg-muted">
+        {t.draft.confirmText}
+      </p>
+      <div className="mt-4 flex flex-wrap gap-3">
+        <button ref={cancelRef} type="button" onClick={() => setConfirming(false)} className={buttonStyles({ variant: "secondary", className: "min-w-[min(100%,8rem)] flex-1" })}>
+          {t.draft.confirmNo}
+        </button>
+        <button type="button" onClick={onConfirm} className={buttonStyles({ variant: "secondary", className: "min-w-[min(100%,8rem)] flex-1" })}>
+          {t.draft.confirmYes}
+        </button>
+      </div>
+    </div>
   );
 }
 
