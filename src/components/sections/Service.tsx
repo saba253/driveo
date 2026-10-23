@@ -13,9 +13,9 @@ export function Service() {
           <SectionHeading id="service-title" eyebrow={t.eyebrow} title={t.title} titleAccent={t.titleAccent} intro={t.intro} />
 
           {/* Not a tow truck — the core distinction of the service. */}
-          <aside className="mt-8 flex gap-4 rounded-lg border border-line bg-surface/60 p-5 sm:p-6" aria-labelledby="service-note-title">
+          <aside className="mt-8 flex gap-4 rounded-lg border border-line bg-surface/60 p-[20px] sm:p-[24px]" aria-labelledby="service-note-title">
             <Icon name="info" size={22} className="mt-0.5 shrink-0 text-accent" />
-            <div>
+            <div className="min-w-0 [overflow-wrap:anywhere]">
               <h3 id="service-note-title" className="font-semibold">
                 {t.note.title}
               </h3>
@@ -26,22 +26,21 @@ export function Service() {
 
         <div className="min-w-0 lg:pt-11">
           <h3 className="reveal text-sm font-medium text-fg-subtle">{t.useCasesLabel}</h3>
-          <ol className="mt-4">
-            {t.useCases.map((item, i) => (
+          <ul className="mt-4">
+            {t.useCases.map((item) => (
               <li
                 key={item.title}
-                className="reveal grid grid-cols-[2.75rem_minmax(0,1fr)] gap-x-4 border-t border-line py-7 last:border-b sm:grid-cols-[4rem_minmax(0,1fr)] sm:py-8"
+                className="reveal grid grid-cols-[1.25rem_minmax(0,1fr)] gap-x-4 border-t border-line py-7 last:border-b sm:grid-cols-[2rem_minmax(0,1fr)] sm:py-8"
               >
-                <span className="font-brand text-sm font-semibold text-accent tabular-nums" aria-hidden="true">
-                  {String(i + 1).padStart(2, "0")}
-                </span>
-                <div>
+                {/* A plain marker: these are independent use cases, not steps, so no 01 / 02 / 03. */}
+                <span className="mt-2.5 block h-px w-5 bg-accent sm:w-6" aria-hidden="true" />
+                <div className="min-w-0">
                   <h4 className="text-h3 font-semibold">{item.title}</h4>
                   <p className="mt-2 text-fg-muted">{item.text}</p>
                 </div>
               </li>
             ))}
-          </ol>
+          </ul>
         </div>
       </Container>
     </section>

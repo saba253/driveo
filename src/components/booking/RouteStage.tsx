@@ -87,9 +87,9 @@ export function RouteStage({ form }: { form: BookingForm }) {
           </Field>
         </div>
         {/* Shared hint, referenced by the time field: the time is a request, not confirmed availability. */}
-        <p id={`${fieldId("pickupTime")}-hint`} className="mt-3 flex gap-2 text-xs leading-relaxed text-fg-subtle">
+        <p id={`${fieldId("pickupTime")}-hint`} className="mt-3 flex gap-2 text-sm leading-relaxed text-fg-subtle">
           <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-accent/70" aria-hidden="true" />
-          {t.timeHint}
+          <span className="min-w-0">{t.timeHint}</span>
         </p>
       </fieldset>
     </>

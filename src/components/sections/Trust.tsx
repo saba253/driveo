@@ -9,7 +9,7 @@ export function Trust() {
   return (
     <section id="trust" aria-labelledby="trust-title" className="py-20 sm:py-28 lg:py-32">
       <Container>
-        <div className="reveal grid gap-10 rounded-xl border border-line bg-surface p-5 shadow-card sm:p-10 lg:grid-cols-2 lg:gap-16 lg:p-14">
+        <div className="reveal grid gap-10 rounded-xl border border-line bg-surface p-[20px] shadow-card sm:p-[40px] lg:grid-cols-2 lg:gap-16 lg:p-[56px]">
           <SectionHeading id="trust-title" eyebrow={t.eyebrow} title={t.title} intro={t.intro} className="min-w-0" />
 
           <ul className="min-w-0 divide-y divide-line">

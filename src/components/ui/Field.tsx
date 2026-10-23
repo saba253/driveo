@@ -46,7 +46,7 @@ export function describe(id: string, opts: { hint?: boolean; error?: boolean }) 
 
 export function FieldHint({ id, children }: { id: string; children: ReactNode }) {
   return (
-    <p id={`${id}-hint`} className="mt-1.5 text-xs leading-relaxed text-fg-subtle">
+    <p id={`${id}-hint`} className="mt-1.5 text-sm leading-relaxed text-fg-subtle">
       {children}
     </p>
   );
@@ -57,7 +57,7 @@ export function FieldError({ id, children }: { id: string; children?: ReactNode 
   return (
     <p id={`${id}-error`} className="mt-1.5 flex gap-1.5 text-sm leading-snug text-danger">
       <Icon name="alert" size={16} className="mt-0.5 shrink-0" />
-      <span>{children}</span>
+      <span className="min-w-0">{children}</span>
     </p>
   );
 }
@@ -117,7 +117,7 @@ export function Checkbox({ id, label, hint, error, className, ...props }: Checkb
             className="pointer-events-none absolute text-accent-ink opacity-0 transition-opacity duration-(--duration-fast) peer-checked:opacity-100"
           />
         </span>
-        <span className="text-[0.9375rem] leading-snug text-fg">{label}</span>
+        <span className="min-w-0 text-[0.9375rem] leading-snug text-fg">{label}</span>
       </label>
       <div className="pl-8.5">
         <FieldError id={id}>{error}</FieldError>
@@ -148,7 +148,7 @@ export function Segmented<V extends string>({ name, legend, options, value, onCh
           <label
             key={o.value}
             className={cn(
-              "relative flex h-13 cursor-pointer items-center justify-center rounded-md border bg-field px-3 text-center text-[0.9375rem]",
+              "relative flex min-h-13 min-w-0 cursor-pointer items-center justify-center rounded-md border bg-field px-3 py-2 text-center text-[0.9375rem] [overflow-wrap:anywhere]",
               "transition-[border-color,background-color,color] duration-(--duration-fast)",
               "has-checked:border-accent has-checked:bg-accent/10 has-checked:text-fg",
               "has-focus-visible:ring-3 has-focus-visible:ring-accent/40",

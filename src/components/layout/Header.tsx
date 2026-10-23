@@ -8,7 +8,7 @@ import { MobileMenu } from "./MobileMenu";
 export function Header() {
   return (
     <header className="sticky top-0 z-40 border-b border-line/70 bg-canvas/75 backdrop-blur-lg backdrop-saturate-150">
-      <Container className="flex h-16 items-center justify-between gap-4 lg:h-18">
+      <Container className="flex min-h-[64px] flex-wrap items-center justify-between gap-x-4 gap-y-2 py-2 lg:min-h-[72px]">
         <a href="#top" className="-mx-1 rounded-sm px-1 py-2" aria-label={`${brand.displayName} — ${ka.a11y.home}`}>
           <Wordmark className="text-lg lg:text-xl" />
         </a>
@@ -29,7 +29,8 @@ export function Header() {
         </nav>
 
         <div className="flex items-center gap-2">
-          <ButtonLink href="#booking" size="sm" className="whitespace-nowrap max-[359px]:hidden">
+          {/* On phones the same action sits in the menu panel, where there is room for the full label. */}
+          <ButtonLink href="#booking" size="sm" className="whitespace-nowrap max-sm:hidden">
             {ka.header.cta}
           </ButtonLink>
           <MobileMenu />

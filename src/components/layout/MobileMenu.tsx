@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import { ButtonLink } from "@/components/ui/Button";
 import { Container } from "@/components/ui/Container";
 import { Icon } from "@/components/ui/Icon";
 import { ka } from "@/content/ka";
@@ -47,7 +48,7 @@ export function MobileMenu() {
         aria-controls={panelId}
         aria-label={open ? ka.header.menuClose : ka.header.menuOpen}
         onClick={() => setOpen((v) => !v)}
-        className="grid size-12 place-items-center rounded-md text-fg transition-colors duration-(--duration-base) hover:bg-fg/5"
+        className="grid size-[48px] shrink-0 place-items-center rounded-md text-fg transition-colors duration-(--duration-base) hover:bg-fg/5"
       >
         <Icon name={open ? "close" : "menu"} size={22} />
       </button>
@@ -66,14 +67,19 @@ export function MobileMenu() {
                 <a
                   href={item.href}
                   onClick={() => setOpen(false)}
-                  className="flex min-h-14 items-center justify-between text-lg text-fg"
+                  className="flex min-h-14 min-w-0 items-center justify-between gap-3 text-lg text-fg [overflow-wrap:anywhere]"
                 >
                   {item.label}
-                  <Icon name="arrowRight" size={18} className="text-fg-subtle" />
+                  <Icon name="arrowRight" size={18} className="shrink-0 text-fg-subtle" />
                 </a>
               </li>
             ))}
           </ul>
+          <div className="pb-5 sm:hidden">
+            <ButtonLink href="#booking" size="lg" className="w-full" onClick={() => setOpen(false)}>
+              {ka.header.cta}
+            </ButtonLink>
+          </div>
         </Container>
       </nav>
     </div>

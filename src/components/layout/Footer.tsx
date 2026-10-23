@@ -27,7 +27,7 @@ export function Footer() {
             <ul className="space-y-1">
               {ka.nav.map((item) => (
                 <li key={item.href}>
-                  <a href={item.href} className="inline-flex min-h-10 items-center rounded-sm text-fg-muted transition-colors hover:text-fg">
+                  <a href={item.href} className="inline-flex min-h-11 min-w-11 items-center rounded-sm text-fg-muted transition-colors hover:text-fg">
                     {item.label}
                   </a>
                 </li>
@@ -43,7 +43,7 @@ export function Footer() {
                   <dt className="text-sm text-fg-subtle">{t.contactLabels[c.key]}</dt>
                   <dd className="mt-0.5">
                     {c.value ? (
-                      <a href={c.href(c.value)} className="rounded-sm text-fg transition-colors hover:text-accent">
+                      <a href={c.href(c.value)} className="inline-flex min-h-11 items-center rounded-sm text-fg transition-colors hover:text-accent">
                         {c.value}
                       </a>
                     ) : (
@@ -60,7 +60,7 @@ export function Footer() {
           <p>
             © {brand.displayName} · {t.prototypeNote}
           </p>
-          <a href="#top" className="inline-flex min-h-10 items-center gap-2 self-start rounded-sm text-fg-muted transition-colors hover:text-fg sm:self-auto">
+          <a href="#top" className="inline-flex min-h-11 min-w-11 items-center gap-2 self-start rounded-sm text-fg-muted transition-colors hover:text-fg sm:self-auto">
             {t.backToTop}
             <Icon name="arrowUp" size={16} />
           </a>

@@ -105,7 +105,7 @@ export function BookingCard({ className, mode = "prototype" }: { className?: str
       id="booking"
       aria-labelledby="booking-title"
       className={cn(
-        "relative scroll-mt-24 rounded-xl border border-line bg-surface/85 p-5 shadow-card backdrop-blur-xl sm:p-7",
+        "relative scroll-mt-24 rounded-xl border border-line bg-surface/85 p-[20px] shadow-card backdrop-blur-xl sm:p-[28px]",
         className,
       )}
     >
@@ -113,7 +113,7 @@ export function BookingCard({ className, mode = "prototype" }: { className?: str
       <div className="absolute inset-x-8 -top-px h-px bg-linear-to-r from-transparent via-accent/50 to-transparent" aria-hidden="true" />
 
       <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
-        <h2 id="booking-title" className="text-h3 font-bold">
+        <h2 id="booking-title" className="min-w-0 text-h3 font-bold">
           {t.title}
         </h2>
         <Badge className="mt-1 shrink-0">{mode === "test" ? t.test.badge : ka.prototype.badge}</Badge>
@@ -150,14 +150,16 @@ export function BookingCard({ className, mode = "prototype" }: { className?: str
           <form noValidate onSubmit={onSubmitStage(stage)} aria-labelledby="booking-title">
             {stage === "route" ? <RouteStage form={form} /> : <DetailsStage form={form} section={stage} onEditVehicle={() => go(() => form.goBack("contact"))} />}
 
-            <div className={cn("mt-6 grid gap-3", showBack && "grid-cols-[auto_minmax(0,1fr)]")}>
+            {/* Side by side normally; with enlarged text the main button wraps onto its own row
+                (its 10rem minimum grows with the text) instead of squeezing its label. */}
+            <div className="mt-6 flex flex-wrap gap-3">
               {showBack && (
-                <Button variant="secondary" size="lgCompact" onClick={() => go(() => form.goBack(stage))}>
+                <Button variant="secondary" size="lgCompact" className="shrink-0" onClick={() => go(() => form.goBack(stage))}>
                   <Icon name="arrowLeft" size={18} />
                   <span className="sr-only min-[400px]:not-sr-only">{t.back}</span>
                 </Button>
               )}
-              <Button type="submit" size="lg" className="w-full">
+              <Button type="submit" size="lg" className="min-w-[min(100%,10rem)] flex-1">
                 {primaryLabel}
                 <Icon name="arrowRight" size={18} className="transition-transform duration-(--duration-base) group-hover/button:translate-x-0.5" />
               </Button>
@@ -209,8 +211,8 @@ export function BookingCard({ className, mode = "prototype" }: { className?: str
               <p className="mt-1 font-mono text-lg font-semibold text-fg" dir="ltr">
                 {form.submission.reference}
               </p>
-              <p className="mt-3 text-sm leading-relaxed text-fg-muted">{t.received.next}</p>
-              {mode === "test" && <p className="mt-2 text-xs text-fg-subtle">{t.received.testNote}</p>}
+              <p className="mt-3 text-[0.9375rem] leading-relaxed text-fg-muted">{t.received.next}</p>
+              {mode === "test" && <p className="mt-2 text-sm text-fg-subtle">{t.received.testNote}</p>}
             </div>
             <Button size="lg" className="w-full" onClick={() => go(form.restart)}>
               {t.restart}
@@ -234,7 +236,7 @@ export function BookingCard({ className, mode = "prototype" }: { className?: str
       </div>
 
       {stage !== "done" && stage !== "received" && (
-        <p className="mt-3 text-center text-xs leading-relaxed text-fg-subtle">{mode === "test" ? t.test.note : t.prototypeNote}</p>
+        <p className="mt-3 text-center text-sm leading-relaxed text-fg-subtle">{mode === "test" ? t.test.note : t.prototypeNote}</p>
       )}
     </section>
   );
@@ -244,9 +246,9 @@ function StatusNotice({ tone, title, text }: { tone: "accent" | "danger"; title:
   return (
     <div className={cn("flex gap-3 rounded-lg border p-4", tone === "accent" ? "border-accent/35 bg-accent/10" : "border-danger/40 bg-danger/10")}>
       <Icon name={tone === "accent" ? "check" : "alert"} size={20} className={cn("mt-0.5 shrink-0", tone === "accent" ? "text-accent" : "text-danger")} />
-      <div>
+      <div className="min-w-0">
         <p className="font-semibold text-fg">{title}</p>
-        <p className="mt-1 text-sm leading-relaxed text-fg-muted">{text}</p>
+        <p className="mt-1 text-[0.9375rem] leading-relaxed text-fg-muted">{text}</p>
       </div>
     </div>
   );

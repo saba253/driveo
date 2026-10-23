@@ -99,6 +99,8 @@
     font-family: var(--font-sans);
     /* Georgian script needs slightly more leading than Latin. */
     line-height: 1.65;
+    /* Long Georgian words may break rather than overflow narrow columns (e.g. with enlarged text). */
+    overflow-wrap: break-word;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
@@ -126,6 +128,14 @@
     outline: 2px solid var(--color-accent);
     outline-offset: 3px;
     border-radius: 0.25rem;
+  }
+
+  /* Tailwind v4 resets buttons to the default cursor; interactive controls show a pointer. */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  summary,
+  label[for] {
+    cursor: pointer;
   }
 
   /* Note: never apply text-transform: uppercase to Georgian text — browsers
@@ -247,5 +257,19 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+}
+
+/* Increased contrast (system setting): brighter secondary text, visible dividers and
+   input borders, a thicker focus ring. Brand colours (canvas, lime) stay the same. */
+@media (prefers-contrast: more) {
+  :root {
+    --color-fg-muted: #d5dae0;
+    --color-fg-subtle: #c3c9d1;
+    --color-line: #5a6472;
+    --color-line-strong: #a7b0bb;
+  }
+  :focus-visible {
+    outline-width: 3px;
   }
 }

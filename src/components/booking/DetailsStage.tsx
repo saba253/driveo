@@ -86,7 +86,7 @@ function OpenSection({ index, title, children }: { index: number; title: string;
         className="mb-4 flex items-center gap-2.5 text-[0.9375rem] font-semibold outline-none"
       >
         <SectionBadge index={index} />
-        {title}
+        <span className="min-w-0">{title}</span>
       </h4>
       {children}
     </section>
@@ -119,10 +119,10 @@ function DoneSection({ index, title, summary, onChange }: { index: number; title
 
 function UpcomingSection({ index, title }: { index: number; title: string }) {
   return (
-    <div className="flex items-center gap-2.5 rounded-lg border border-dashed border-line px-3.5 py-3 text-sm text-fg-subtle">
+    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-lg border border-dashed border-line px-3.5 py-3 text-sm text-fg-subtle">
       <SectionBadge index={index} />
-      <span className="font-semibold">{title}</span>
-      <span className="ml-auto text-xs">{t.sections.upNext}</span>
+      <span className="min-w-0 font-semibold">{title}</span>
+      <span className="ml-auto text-[0.8125rem]">{t.sections.upNext}</span>
     </div>
   );
 }
@@ -255,17 +255,17 @@ function ContactFields({ form }: { form: BookingForm }) {
           />
         </Field>
       </div>
-      <p id={`${fieldId("customerPhone")}-hint`} className="-mt-1 text-xs leading-relaxed text-fg-subtle">
+      <p id={`${fieldId("customerPhone")}-hint`} className="-mt-1 text-sm leading-relaxed text-fg-subtle">
         {t.phoneHint}
       </p>
 
       <div className="rounded-lg border border-line bg-canvas/50 p-4">
         <h5 className="text-sm font-semibold">{t.fuelPolicy.title}</h5>
-        <ul id={policyId} className="mt-2 space-y-1.5 text-xs leading-relaxed text-fg-muted">
+        <ul id={policyId} className="mt-2 space-y-1.5 text-sm leading-relaxed text-fg-muted">
           {t.fuelPolicy.points.map((point) => (
             <li key={point} className="flex gap-2">
               <span className="mt-1.5 size-1 shrink-0 rounded-full bg-accent/70" aria-hidden="true" />
-              {point}
+              <span className="min-w-0">{point}</span>
             </li>
           ))}
         </ul>

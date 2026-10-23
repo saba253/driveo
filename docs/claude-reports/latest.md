@@ -1,102 +1,62 @@
-# DRIVEO — Claude Code development report
+# DRIVEO — UI/UX improvements from the Apple Design audit
 
-DRIVEO — Claude Code development report. Please review the completed work, identify any issues, update the progress tracker, and prepare the next safe development step.
+Status: implemented, **not committed yet** (waiting for founder approval). Base commit `3f8a10c`.
 
-- **Step:** 1.8, final pricing, prepayment and fuel policy (audit and plan) + homepage final CTA
-- **Date:** 2026-10-23
-- **Base:** `0b62bfb`. The commit hash for this step is in the push summary of this session; this file is part of that commit.
-- **Detailed plan:** [docs/pricing-prepayment-plan.md](../pricing-prepayment-plan.md)
+## What changed
 
-## 1. Homepage final CTA: implemented
+1. **Overflow at 320px with 200% text**
+   - Fixed in the header, mobile menu, booking buttons, service note, the step 2 sections, the checkbox and segmented labels, the fuel policy list and the review rows.
+   - Gutters and padding are now fixed px, with the same values at default size.
+   - Flex text can shrink (`min-w-0`) and long words wrap.
+   - The step buttons wrap onto their own rows.
+   - On phones the header CTA moved into the mobile menu as a full-width button.
+2. **Pricing copy**
+   - Process step 2, the trust "price" card and the FAQ answer now say the service price and availability are confirmed after the request.
+   - The old automatic-pricing sentences are kept as comments in `ka.ts`.
+   - No pricing code was changed.
+3. **Readability**
+   - 12px notes and hints are now 14px; badge and "up next" text are 13px; short card copy is 15px. Hierarchy is unchanged.
+4. **Labels**
+   - Header CTA and booking title are now "გადაყვანის დაგეგმვა".
+   - Step buttons and the final submit keep their own labels.
+5. **Footer:** all links and the back-to-top button are at least 44×44.
+6. **Cursor:** buttons, summaries and `label[for]` show a pointer.
+7. **Contrast:** added `@media (prefers-contrast: more)`.
+   - Brighter muted and subtle text (7.8–11.2:1) and stronger lines and borders.
+   - 3px focus ring. Brand colours unchanged.
+8. **Service list:** use cases are a `ul` with a lime dash marker; process steps keep 01/02/03.
 
-- **Copy:**
-  - Eyebrow «თქვენი დრო მნიშვნელოვანია.»
-  - Title «დანიშნულების ადგილამდე —», with «მარტივად.» in lime (#D9F66F)
-  - The new description and the button «გადაყვანის დაგეგმვა»
-  - The button still scrolls to `#booking`
-- **Layout:** the heading container was widened one step (`max-w-2xl` → `max-w-3xl`) so the first line fits on one line on desktop (verified at 1280 px). On a phone (375 px) it wraps once at a word boundary. There's no overflow. The design, centring, glow and animations are unchanged.
-- **No promises:** the copy doesn't mention live pricing or online payment. A future variant for when automatic pricing is live is in the plan, §10, and is **not published**.
+The desktop active-section indicator was not implemented, as instructed.
 
-## 2. Pricing engine reuse
+## Files changed (15)
 
-Keep `priceQuote` (whole-GEL rounding, 12 h validity, fingerprint), the eligibility gate, the provider-neutral `RouteProvider` and the quote service. There are two gaps:
-- a **persistent quote store**, since the current one is in-memory and refused in production
-- a **permitted routing adapter with geocoding**
+- `src/app/globals.css`
+- `src/content/ka.ts`
+- `src/components/ui/`: `Button.tsx`, `Container.tsx`, `Field.tsx`, `Badge.tsx`
+- `src/components/layout/`: `Header.tsx`, `MobileMenu.tsx`, `Footer.tsx`
+- `src/components/booking/`: `BookingCard.tsx`, `DetailsStage.tsx`, `ReviewStage.tsx`, `RouteStage.tsx`
+- `src/components/sections/`: `Service.tsx`, `Trust.tsx`
 
-The database still refuses `automatic_quote` bookings until quotes can be verified server-side.
+## Checks actually run
 
-## 3. Free routing comparison (summary)
+- `npx tsc --noEmit`: pass
+- `npm run lint`: pass
+- `npm test`: 361/361 pass
+- `npx next build`: pass
+- Browser, dev server:
+  - **320px at 100%, 150% and 200% text:** page width 320, no horizontal scroll, zero overflowing elements. Covers the whole page and the open mobile menu.
+  - **Booking card at 200%:** steps 1, 2 (vehicle and contact) and 3 (review) checked. The review "edit" buttons extend 16px into the card padding through a negative margin; that's by design and stays inside the card.
+  - **375px at 100% and 200%:** no overflow.
+  - **1280px:** no page overflow. The process connector line reaching into the gap is decorative and unchanged.
+  - **On every width:** no visible text under 13px; all footer targets at least 44px; all buttons `cursor: pointer`; the service list has no numbers while the process `ol` has 3 steps.
+  - **Keyboard:** 12 real Tab presses moved focus in a logical order. Every focused element had a visible outline or ring.
+  - **Validation:** submitting the empty vehicle section showed 5 errors, `aria-invalid` on the fields, focus on the first invalid field, and the live message "შეასწორეთ 5 ველი.".
 
-- **openrouteservice** free Standard key: 2,000 directions/day, 40/min. Commercial use isn't clearly stated, so get written confirmation from HeiGIT first. Its website is currently offline. It needs geocoding.
-- **OSRM demo** and **GraphHopper free**: non-commercial only. Not allowed for real prices.
-- **Self-hosted** OSRM/Valhalla/ORS on the Georgia OSM extract: best long-term free option. It needs a small server, which costs money and needs approval. It requires ODbL attribution.
-- **Google Routes**: adapter ready, deferred because there's no billing.
+## Not fully verifiable here
 
-## 4. Automatic pricing requirements
+- **Reduced motion:** the browser pane can't emulate `prefers-reduced-motion`. I confirmed the reduce rule is in the served CSS and that JS scrolling checks the media query, but didn't see it take effect.
+- **Increased contrast:** same limitation. The `prefers-contrast: more` rule is in the served CSS but wasn't seen in effect.
 
-1. A permitted provider that fails closed: never mock or straight-line distance, and «ფასი დროებით მიუწვდომელია» on any error.
-2. Founder-approved tariff formula, minimum charge, positioning and return rules, and service areas.
-3. A persistent, server-verified quote.
-4. A separate quote line: «საწვავი / დატენვა — არ შედის მომსახურების საფასურში».
-5. Per-route activation via the eligibility gate.
+## Remaining notes
 
-## 5. Prepayment workflow (design)
-
-- **Separate states:**
-  - booking: submitted → approved → dispatched → in_progress → completed
-  - payment: not_due → awaiting_transfer → verified / expired / refunded
-- **Dispatch gate:** the database blocks dispatch until the payment is verified.
-- **Verification:** only from the bank statement (reference, amount equal to the quote, date). A customer screenshot is not proof.
-- **Order status page** `/order/<token>`: the token is random and stored only as a hash. It shows no personal data, and payment instructions appear only after approval **and** founder-approved bank details. Bank details are never hardcoded.
-
-## 6. Fuel and charging (draft copy in the plan, §6)
-
-- **Wording:** separate texts for petrol/diesel, electric and hybrid vehicles.
-- **Top-ups:** need written customer authorization first, receipt evidence, and settlement separate from the fee.
-- **No estimates in the total:** no invented fuel or charging costs. An optional estimate only from the customer's own consumption data.
-- **Version:** publishing this wording means `FUEL_POLICY` v3.
-
-## 7. Required database changes (future, each separately approved)
-
-- `quotes`
-- booking states plus the dispatch gate
-- `booking_payments` + `payment_events`
-- `business_settings` (bank details)
-- `booking_access_tokens`
-- `fuel_topups`
-
-## 8. Risks and open founder decisions
-
-- **Risks:** routing terms and availability; Georgian geocoding accuracy; payment reference and amount mistakes; token leakage (mitigated); VAT and invoicing.
-- **Decisions:** tariffs; areas; routing provider; payment deadline; cancellation and refund policy; bank account; top-up authorization and cap; whether drivers advance money; Terms of Use and Privacy Policy; insurance.
-
-## 9. State checks
-
-- Migration `20261023000200` is **already applied** (approved in Step 1.7E.2-B). The remote is up to date with 7 migrations.
-- No remote changes were made in this step.
-- No paid service was enabled.
-- Booking submissions, automatic pricing, payments and notifications all remain **off**.
-- Test booking DRV-2026-000001 is untouched.
-
-## 10. Tests
-
-- TypeScript: pass. Lint: pass. Production build: pass.
-- **361/361 tests pass.**
-- Client-bundle secret scan: clean.
-
-## 11. Progress (rough)
-
-- Technical MVP: about **84%**. The booking, admin, notification and Telegram foundations are done; automatic pricing and prepayment remain.
-- Production / commercial readiness: about **42%**. The new prepayment and pricing scope adds work, plus the legal and launch blockers.
-
-## 12. Remaining tasks and next step
-
-**Next recommended step:** implement the persistent quote store and verification (plan §9, step 1), still with pricing disabled. In parallel, the founder:
-- emails HeiGIT about commercial use of openrouteservice
-- decides the tariff formula and pilot route
-
-**Still open from earlier:**
-- the dashboard pickup-time check, which needs the founder's sign-in
-- the notification drill design, which needs approval
-- closing the two GitHub alerts as "Used in tests"
-- legal and production blockers
+- At 200% on 320px, long Georgian words in the narrow fuel list break mid-word. It's legible, with no overflow.

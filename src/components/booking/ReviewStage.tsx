@@ -23,9 +23,9 @@ export function PrototypeNotice({ title, text, id }: { title: string; text: stri
   return (
     <div id={id} className="flex gap-3 rounded-lg border border-accent/35 bg-accent/10 p-4">
       <Icon name="info" size={20} className="mt-0.5 shrink-0 text-accent" />
-      <div>
+      <div className="min-w-0">
         <p className="font-semibold text-fg">{title}</p>
-        <p className="mt-1 text-sm leading-relaxed text-fg-muted">{text}</p>
+        <p className="mt-1 text-[0.9375rem] leading-relaxed text-fg-muted">{text}</p>
       </div>
     </div>
   );
@@ -79,9 +79,9 @@ export function ReviewStage({ form, mode = "prototype" }: { form: BookingForm; m
       <div className="rounded-lg border border-line p-4 text-sm">
         <p className="font-semibold text-fg">{r.price}</p>
         <p className="mt-1 leading-relaxed text-fg-muted">{mode === "test" ? t.test.priceText : r.priceText}</p>
-        <p className="mt-2 flex gap-2 text-xs leading-relaxed text-fg-subtle">
+        <p className="mt-2 flex gap-2 text-sm leading-relaxed text-fg-subtle">
           <span className="mt-1.5 size-1 shrink-0 rounded-full bg-accent/70" aria-hidden="true" />
-          {r.energyNote}
+          <span className="min-w-0">{r.energyNote}</span>
         </p>
       </div>
     </div>
@@ -92,7 +92,7 @@ function Group({ title, stage, form, children }: { title: string; stage: FormSta
   return (
     <div className="p-4">
       <dt className="mb-2 flex items-center justify-between gap-3 text-sm font-semibold text-fg">
-        <span>{title}</span>
+        <span className="min-w-0">{title}</span>
         <button
           type="button"
           onClick={() => form.editStage(stage)}
@@ -112,7 +112,7 @@ function Group({ title, stage, form, children }: { title: string; stage: FormSta
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="grid gap-0.5 text-sm min-[420px]:grid-cols-[8.5rem_minmax(0,1fr)] min-[420px]:gap-3">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-0.5 text-sm min-[420px]:grid-cols-[8.5rem_minmax(0,1fr)] min-[420px]:gap-3">
       <dt className="text-fg-subtle">{label}</dt>
       <dd className="min-w-0 text-fg [overflow-wrap:anywhere]">{children}</dd>
     </div>

@@ -12,12 +12,14 @@ const variants: Record<Variant, string> = {
 
 /* sm keeps a 44px touch target (header use); md/lg are 48px+.
    Pass layout classes via className, not padding/height — those would clash with the size. */
+/* Heights in rem grow with enlarged text (bigger targets); side padding in px does not,
+   so long Georgian labels still fit on narrow screens. Values equal the previous rem at 16px. */
 const sizes: Record<Size, string> = {
-  sm: "min-h-11 px-4 text-sm",
-  md: "min-h-12 px-5 text-[0.9375rem]",
-  lg: "min-h-14 px-7 text-base",
+  sm: "min-h-11 px-[16px] text-sm",
+  md: "min-h-12 px-[20px] text-[0.9375rem]",
+  lg: "min-h-14 px-[28px] text-base",
   /** lg height with tight padding, for icon-led secondary actions beside a full-width button. */
-  lgCompact: "min-h-14 min-w-14 px-4 text-base",
+  lgCompact: "min-h-14 min-w-[56px] px-[16px] text-base",
 };
 
 type StyleOptions = { variant?: Variant; size?: Size; className?: string };
@@ -25,7 +27,7 @@ type StyleOptions = { variant?: Variant; size?: Size; className?: string };
 /** Shared button styling for <button> and <a> elements. */
 export function buttonStyles({ variant = "primary", size = "md", className }: StyleOptions = {}) {
   return cn(
-    "group/button inline-flex select-none items-center justify-center gap-2.5 rounded-md text-center leading-snug font-semibold",
+    "group/button inline-flex max-w-full select-none items-center justify-center gap-2.5 rounded-md text-center leading-snug font-semibold [overflow-wrap:anywhere]",
     "transition-[background-color,border-color,color,box-shadow,transform] duration-(--duration-base) ease-(--ease-out-soft)",
     "active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50",
     variants[variant],
